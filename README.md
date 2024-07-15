@@ -1,3 +1,6 @@
+# Additional Packages we need:
+`pip install casadi`
+
 # highway-env
 
 [![build](https://github.com/eleurent/highway-env/workflows/build/badge.svg)](https://github.com/eleurent/highway-env/actions?query=workflow%3Abuild)
