@@ -89,13 +89,13 @@ def create_reference_trajectory(N, current_state, T):
     return ref_trajectory
 
 def find_nearest_obstacle(state, others):
-    ego_position = state[0:2]
+    ego_position = state[1:3]  # Position X, Y
     min_distance = float('inf')
     nearest_obstacle = None
     nearest_speed = 0
     for other in others:
-        other_position = other[0:2]
-        other_speed = other[3]
+        other_position = other[1:3]  # Position X, Y
+        other_speed = np.linalg.norm(other[3:5])  # Speed calculated from vx, vy
         distance = np.linalg.norm(ego_position - other_position)
         if distance < min_distance:
             min_distance = distance
@@ -107,22 +107,30 @@ def debug_obstacle_info(state, nearest_obstacle, nearest_obstacle_speed):
     print("Ego State:")
     print(state)
     print("Ego Speed:")
-    print(state[3])
+    print(np.linalg.norm(state[3:5]))  # Calculate speed from vx, vy
     print("Nearest Obstacle Position:")
     print(nearest_obstacle)
     print("Nearest Obstacle Speed:")
     print(nearest_obstacle_speed)
 
 def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
-    state = env.reset()
+    state, info = env.reset()
     
     while True:
         if isinstance(state, tuple):
             state = state[0]
 
-        vehicle_state = state[0]  # Adjust this if necessary
-        other_vehicles = state[1:]  # Assuming other vehicles are the rest of the state array
-        current_state = np.array([vehicle_state[0], vehicle_state[1], vehicle_state[2], vehicle_state[3]]).reshape(4, 1)
+        vehicle_state = state[0]  # Ego vehicle state
+        other_vehicles = state[1:-1]  # Other vehicles, ignoring the last placeholder row
+
+        # Extract current state for the ego vehicle
+        current_state = np.array([
+            vehicle_state[1],  # Position X
+            vehicle_state[2],  # Position Y
+            np.arctan2(vehicle_state[4], vehicle_state[3]),  # Orientation from vx, vy
+            np.linalg.norm(vehicle_state[3:5])  # Speed from vx, vy
+        ]).reshape(4, 1)
+
         ref_state = create_reference_trajectory(N, current_state, T)
         nearest_obstacle, nearest_obstacle_speed = find_nearest_obstacle(vehicle_state, other_vehicles)
 
@@ -156,18 +164,18 @@ def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
 
         if info['crashed']:
             print("Collision detected. Restarting the simulation...")
-            state = env.reset()
+            state, info = env.reset()
             continue
 
         if done and not info['crashed']:
             print("Simulation successful. Restarting the simulation...")
-            state = env.reset()
+            state, info = env.reset()
             continue
 
 # Main function
 if __name__ == '__main__':
     env = gym.make('intersection-v1', render_mode="rgb_array")
-    env.configure({"simulation_frequency": 15})  # To slow down the visualization
+    env.unwrapped.configure({"simulation_frequency": 15})  # Corrected way to configure the environment
     
     opti, X0, X_ref, X, U, obs_pos, obs_speed = mpc_controller(env)
     simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed)
