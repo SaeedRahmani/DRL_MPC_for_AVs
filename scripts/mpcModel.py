@@ -3,27 +3,21 @@ import highway_env
 import numpy as np
 import casadi as ca
 import matplotlib.pyplot as plt
-import math
 
 # Define the dynamics of the vehicle
 def vehicle_dynamics(x, u):
-    x_pos = x[0]
-    y_pos = x[1]
-    theta = x[2]
-    v = x[3]
-    delta = u[1]
+    x_pos, y_pos, vx, vy = x[0], x[1], x[2], x[3]
+    acceleration, steering = u[0], u[1]
     
-    lr = 1.5  # distance from rear to center of mass
-    lf = 1.5  # distance from front to center of mass
+    v = ca.sqrt(vx**2 + vy**2)
+    theta = ca.arctan2(vy, vx)
     
-    beta = ca.arctan(lr / (lr + lf) * ca.tan(delta))
+    dx_pos = vx
+    dy_pos = vy
+    dvx = acceleration * ca.cos(theta) - v * steering * ca.sin(theta)
+    dvy = acceleration * ca.sin(theta) + v * steering * ca.cos(theta)
     
-    dx_pos = v * ca.cos(theta + beta)
-    dy_pos = v * ca.sin(theta + beta)
-    dtheta = v * ca.sin(beta) / lr
-    dv = u[0]
-    
-    return ca.vertcat(dx_pos, dy_pos, dtheta, dv)
+    return ca.vertcat(dx_pos, dy_pos, dvx, dvy)
 
 # Define the MPC controller
 def mpc_controller(env, N=10, T=0.1):
@@ -36,8 +30,8 @@ def mpc_controller(env, N=10, T=0.1):
     # Parameters (initial state, reference state, and obstacles)
     X0 = opti.parameter(4, 1)
     X_ref = opti.parameter(4, N+1)
-    obs_pos = opti.parameter(2, 1)  # Position of the nearest obstacle
-    obs_speed = opti.parameter(1, 1)  # Speed of the nearest obstacle
+    obs_pos = opti.parameter(2, 5)  # Position of up to 5 nearest obstacles
+    obs_speed = opti.parameter(1, 5)  # Speed of up to 5 nearest obstacles
     
     # Initial condition
     opti.subject_to(X[:, 0] == X0)
@@ -49,7 +43,7 @@ def mpc_controller(env, N=10, T=0.1):
     
     # Cost function
     Q = np.diag([10, 10, 1, 1])
-    R = np.diag([1, 1])
+    R = np.diag([0.1, 0.1])
     cost = 0
     for k in range(N):
         state_error = X[:, k] - X_ref[:, k]
@@ -57,61 +51,83 @@ def mpc_controller(env, N=10, T=0.1):
         cost += ca.mtimes([state_error.T, Q, state_error]) + ca.mtimes([control_error.T, R, control_error])
         
         # Add obstacle avoidance cost
-        obs_dist = ca.sqrt((X[0, k] - obs_pos[0])**2 + (X[1, k] - obs_pos[1])**2 + 1e-6)  # Avoid division by zero
-        cost += 100 / obs_dist  # Penalize being too close to the obstacle
+        for i in range(5):  # For each of the 5 potential obstacles
+            obs_dist = ca.sqrt((X[0, k] - obs_pos[0, i])**2 + (X[1, k] - obs_pos[1, i])**2 + 1e-6)
+            cost += 50 / obs_dist  # Reduced weight
         
         # Penalize higher speed when near obstacles
-        speed_penalty = 500 * ca.fmax(0, 1 - obs_dist / 10) * X[3, k]
+        speed = ca.sqrt(X[2, k]**2 + X[3, k]**2)
+        speed_penalty = 100 * ca.fmax(0, 1 - obs_dist / 20) * speed
         cost += speed_penalty
     
     opti.minimize(cost)
     
     # Control constraints
-    opti.subject_to(opti.bounded(-1, U[0, :], 1))  # acceleration
-    opti.subject_to(opti.bounded(-ca.pi/4, U[1, :], ca.pi/4))  # steering angle
-    opti.subject_to(opti.bounded(0, X[3, :], 10))  # speed constraints
+    opti.subject_to(opti.bounded(-5, U[0, :], 5))  # acceleration
+    opti.subject_to(opti.bounded(-0.5, U[1, :], 0.5))  # steering
+    opti.subject_to(opti.bounded(0, ca.sqrt(X[2, :]**2 + X[3, :]**2), 20))  # speed constraints
     
     # Solver options
-    opts = {'ipopt.max_iter': 3000, 'ipopt.print_level': 0, 'print_time': 0, 'ipopt.acceptable_tol': 1e-8,
-            'ipopt.acceptable_obj_change_tol': 1e-6}
+    opts = {
+        'ipopt.max_iter': 5000,
+        'ipopt.print_level': 0,
+        'print_time': 0,
+        'ipopt.acceptable_tol': 1e-8,
+        'ipopt.acceptable_obj_change_tol': 1e-6,
+        'ipopt.warm_start_init_point': 'yes',
+        'ipopt.mu_strategy': 'adaptive',
+        'ipopt.hessian_approximation': 'limited-memory'
+    }
     opti.solver('ipopt', opts)
     
     return opti, X0, X_ref, X, U, obs_pos, obs_speed
 
-# Create a more dynamic reference trajectory with sinusoidal curves
-def create_reference_trajectory(N, current_state, T):
+def create_reference_trajectory(N, current_state, T, target_speed=10):
     ref_trajectory = np.zeros((4, N+1))
+    x_pos, y_pos, vx, vy = current_state.flatten()
+    
+    v = np.sqrt(vx**2 + vy**2)
+    if v < 1e-6:
+        theta = 0  # Default direction if speed is near zero
+    else:
+        theta = np.arctan2(vy, vx)
+    
     for i in range(N+1):
-        ref_trajectory[0, i] = current_state[0, 0] + current_state[3, 0] * T * i  # x position
-        ref_trajectory[1, i] = current_state[1, 0] + 2 * np.sin(0.1 * i)  # y position with sinusoidal changes
-        ref_trajectory[2, i] = current_state[2, 0] + 0.1 * np.sin(0.1 * i)  # orientation to follow the curve
-        ref_trajectory[3, i] = current_state[3, 0]  # maintain the same velocity
+        ref_trajectory[0, i] = x_pos + np.cos(theta) * target_speed * T * i
+        ref_trajectory[1, i] = y_pos + np.sin(theta) * target_speed * T * i
+        ref_trajectory[2, i] = target_speed * np.cos(theta)
+        ref_trajectory[3, i] = target_speed * np.sin(theta)
+    
     return ref_trajectory
 
-def find_nearest_obstacle(state, others):
-    ego_position = state[1:3]  # Position X, Y
-    min_distance = float('inf')
-    nearest_obstacle = None
-    nearest_speed = 0
-    for other in others:
-        other_position = other[1:3]  # Position X, Y
-        other_speed = np.linalg.norm(other[3:5])  # Speed calculated from vx, vy
-        distance = np.linalg.norm(ego_position - other_position)
-        if distance < min_distance:
-            min_distance = distance
-            nearest_obstacle = other_position
-            nearest_speed = other_speed
-    return np.array(nearest_obstacle).reshape(2, 1) if nearest_obstacle is not None else np.array([0, 0]).reshape(2, 1), nearest_speed
+def find_nearest_obstacles(ego_vehicle, other_vehicles, max_obstacles=5):
+    ego_position = ego_vehicle[1:3]  # Position X, Y
+    obstacles = []
+    for other in other_vehicles:
+        if other[0] == 1:  # Check if vehicle is present
+            other_position = other[1:3]  # Position X, Y
+            other_speed = np.linalg.norm(other[3:5])  # Speed calculated from vx, vy
+            distance = np.linalg.norm(ego_position - other_position)
+            obstacles.append((distance, other_position, other_speed))
+    
+    obstacles.sort(key=lambda x: x[0])  # Sort by distance
+    nearest_obstacles = obstacles[:max_obstacles]
+    
+    # Pad with dummy obstacles if less than max_obstacles
+    while len(nearest_obstacles) < max_obstacles:
+        nearest_obstacles.append((float('inf'), np.array([0, 0]), 0))
+    
+    return np.array([obs[1] for obs in nearest_obstacles]).T, np.array([obs[2] for obs in nearest_obstacles])
 
-def debug_obstacle_info(state, nearest_obstacle, nearest_obstacle_speed):
+def debug_obstacle_info(ego_vehicle, nearest_obstacles, nearest_obstacle_speeds):
     print("Ego State:")
-    print(state)
+    print(ego_vehicle)
     print("Ego Speed:")
-    print(np.linalg.norm(state[3:5]))  # Calculate speed from vx, vy
-    print("Nearest Obstacle Position:")
-    print(nearest_obstacle)
-    print("Nearest Obstacle Speed:")
-    print(nearest_obstacle_speed)
+    print(np.linalg.norm(ego_vehicle[3:5]))  # Calculate speed from vx, vy
+    print("Nearest Obstacle Positions:")
+    print(nearest_obstacles)
+    print("Nearest Obstacle Speeds:")
+    print(nearest_obstacle_speeds)
 
 def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
     state, info = env.reset()
@@ -120,45 +136,44 @@ def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
         if isinstance(state, tuple):
             state = state[0]
 
-        vehicle_state = state[0]  # Ego vehicle state
-        other_vehicles = state[1:-1]  # Other vehicles, ignoring the last placeholder row
+        ego_vehicle = state[0]  # Ego vehicle state
+        other_vehicles = state[1:]  # Other vehicles
 
         # Extract current state for the ego vehicle
         current_state = np.array([
-            vehicle_state[1],  # Position X
-            vehicle_state[2],  # Position Y
-            np.arctan2(vehicle_state[4], vehicle_state[3]),  # Orientation from vx, vy
-            np.linalg.norm(vehicle_state[3:5])  # Speed from vx, vy
+            ego_vehicle[1],  # Position X
+            ego_vehicle[2],  # Position Y
+            ego_vehicle[3],  # Velocity X
+            ego_vehicle[4]   # Velocity Y
         ]).reshape(4, 1)
 
         ref_state = create_reference_trajectory(N, current_state, T)
-        nearest_obstacle, nearest_obstacle_speed = find_nearest_obstacle(vehicle_state, other_vehicles)
+        nearest_obstacles, nearest_obstacle_speeds = find_nearest_obstacles(ego_vehicle, other_vehicles)
 
         # Debug: Print the reference trajectory and nearest obstacle information
         print("Reference trajectory:")
         print(ref_state)
-        debug_obstacle_info(vehicle_state, nearest_obstacle, nearest_obstacle_speed)
+        debug_obstacle_info(ego_vehicle, nearest_obstacles, nearest_obstacle_speeds)
 
         opti.set_value(X0, current_state)
         opti.set_value(X_ref, ref_state)
-        opti.set_value(obs_pos, nearest_obstacle)
-        opti.set_value(obs_speed, np.array([nearest_obstacle_speed]).reshape(1, 1))
+        opti.set_value(obs_pos, nearest_obstacles)
+        opti.set_value(obs_speed, nearest_obstacle_speeds.reshape(1, -1))
 
         try:
             sol = opti.solve()
+            control_input = sol.value(U[:, 0])
         except RuntimeError as e:
             print("Solver failed:", e)
-            print("X0:", opti.debug.value(X0))
-            print("X_ref:", opti.debug.value(X_ref))
-            print("obs_pos:", opti.debug.value(obs_pos))
-            print("obs_speed:", opti.debug.value(obs_speed))
-            print("X:", opti.debug.value(X))
-            print("U:", opti.debug.value(U))
-            break
+            print("Using fallback control strategy")
+            # Simple fallback strategy: maintain current velocity
+            control_input = np.array([0, 0])
 
-        control_input = sol.value(U[:, 0])
-
-        state, _, done, truncated, info = env.step(control_input)
+        # Convert MPC output to environment action
+        # Assuming the environment expects [steering, acceleration]
+        action = np.array([control_input[1], control_input[0]])
+        
+        state, reward, done, truncated, info = env.step(action)
         done = done or truncated
         env.render()
 
