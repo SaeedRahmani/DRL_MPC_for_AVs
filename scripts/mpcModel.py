@@ -42,7 +42,7 @@ def mpc_controller(env, N=10, T=0.1):
         opti.subject_to(X[:, k+1] == x_next)
     
     # Cost function
-    Q = np.diag([10, 10, 1, 1])
+    Q = np.diag([100, 10, 1, 1])
     R = np.diag([0.1, 0.1])
     cost = 0
     for k in range(N):
@@ -93,12 +93,24 @@ def create_reference_trajectory(N, current_state, T, target_speed=10):
         theta = np.arctan2(vy, vx)
     
     for i in range(N+1):
-        ref_trajectory[0, i] = x_pos + np.cos(theta) * target_speed * T * i
-        ref_trajectory[1, i] = y_pos + np.sin(theta) * target_speed * T * i
+        ref_trajectory[0, i] = x_pos + np.sin(theta) * target_speed * T * i
+        ref_trajectory[1, i] = y_pos + np.cos(theta) * target_speed * T * i
         ref_trajectory[2, i] = target_speed * np.cos(theta)
         ref_trajectory[3, i] = target_speed * np.sin(theta)
     
     return ref_trajectory
+
+def plot_trajectory_on_image(image, trajectory, scale=10):
+    fig, ax = plt.subplots()
+    ax.imshow(image)
+    x = trajectory[0, :] * scale + image.shape[1] / 2
+    y = -trajectory[1, :] * scale + image.shape[0] / 2
+    ax.plot(x, y, 'r-', label='Reference Trajectory')
+    ax.scatter(x, y, c='blue', label='Waypoints')
+    ax.set_xlim([0, image.shape[1]])
+    ax.set_ylim([image.shape[0], 0])
+    ax.legend()
+    plt.show()
 
 def find_nearest_obstacles(ego_vehicle, other_vehicles, max_obstacles=5):
     ego_position = ego_vehicle[1:3]  # Position X, Y
@@ -153,7 +165,7 @@ def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
         # Debug: Print the reference trajectory and nearest obstacle information
         print("Reference trajectory:")
         print(ref_state)
-        debug_obstacle_info(ego_vehicle, nearest_obstacles, nearest_obstacle_speeds)
+        # debug_obstacle_info(ego_vehicle, nearest_obstacles, nearest_obstacle_speeds)
 
         opti.set_value(X0, current_state)
         opti.set_value(X_ref, ref_state)
@@ -176,6 +188,8 @@ def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
         state, reward, done, truncated, info = env.step(action)
         done = done or truncated
         env.render()
+        image = env.render()
+        plot_trajectory_on_image(image, ref_state)
 
         if info['crashed']:
             print("Collision detected. Restarting the simulation...")
@@ -191,6 +205,5 @@ def simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed, N=10, T=0.1):
 if __name__ == '__main__':
     env = gym.make('intersection-v1', render_mode="rgb_array")
     env.unwrapped.configure({"simulation_frequency": 15})  # Corrected way to configure the environment
-    
     opti, X0, X_ref, X, U, obs_pos, obs_speed = mpc_controller(env)
     simulate_mpc(env, opti, X0, X_ref, X, U, obs_pos, obs_speed)
