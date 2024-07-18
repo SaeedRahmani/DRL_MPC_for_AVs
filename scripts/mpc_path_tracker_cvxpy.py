@@ -50,6 +50,11 @@ def linearized_vehicle_model(state, v_ref, psi_ref):
     
     return A, B
 
+def distance_to_nearest_obstacle(current_state, obstacles):
+    current_position = current_state[:2]
+    distances = [np.linalg.norm(current_position - np.array(obs)) for obs in obstacles]
+    return min(distances) if distances else float('inf')
+
 def mpc_control(current_state, reference_trajectory, obstacles, start_index):
     x = cp.Variable((horizon + 1, 4))
     u = cp.Variable((horizon, 2))
@@ -57,6 +62,8 @@ def mpc_control(current_state, reference_trajectory, obstacles, start_index):
     constraints = [x[0] == current_state]
     objective = 0
 
+    nearest_obstacle_distance = distance_to_nearest_obstacle(current_state, obstacles)
+    
     for t in range(horizon):
         ref_index = min(start_index + t, len(reference_trajectory) - 1)
         ref_x, ref_y, ref_v, ref_heading = reference_trajectory[ref_index]
@@ -68,8 +75,12 @@ def mpc_control(current_state, reference_trajectory, obstacles, start_index):
         constraints += [u[t, 1] >= -np.pi/4, u[t, 1] <= np.pi/4]  # steering bounds
         constraints += [x[t+1, 2] >= MIN_SPEED]  # minimum speed constraint
         
+        # Add speed reduction term based on obstacle proximity
+        speed_reduction_factor = max(0, min(1, (nearest_obstacle_distance - 10) / 20))
+        target_speed = ref_v * speed_reduction_factor
+        
         objective += cp.sum_squares(x[t, :2] - [ref_x, ref_y]) + \
-                     0.5 * cp.square(x[t, 2] - ref_v) + \
+                     0.5 * cp.square(x[t, 2] - target_speed) + \
                      0.5 * cp.square(x[t, 3] - ref_heading) + \
                      0.1 * cp.sum_squares(u[t])
         
@@ -126,7 +137,7 @@ for step in range(max_steps):
     distances = calculate_distances(current_state, obstacles)
     
     # Print the detected obstacles and their distances
-    print(f"Step {step}: Detected Obstacles: {obstacles}, Distances: {distances}")
+    # print(f"Step {step}: Detected Obstacles: {obstacles}, Distances: {distances}")
     
     # Find the closest point on the reference trajectory
     closest_index = find_closest_point(current_state, global_reference_trajectory)
