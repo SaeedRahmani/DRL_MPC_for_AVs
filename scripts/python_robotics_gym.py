@@ -3,6 +3,7 @@ import highway_env
 import numpy as np
 import cvxpy as cp
 import math
+import pandas as pd
 
 # Initialize the environment
 env = gym.make("intersection-v0", render_mode="rgb_array")
@@ -212,6 +213,12 @@ def generate_simple_reference_trajectory():
     y = np.zeros_like(x)  # Straight line along x-axis
     yaw = np.zeros_like(x)  # Constant heading (along x-axis)
     return x, y, yaw
+    # filepath = "inter.txt"
+    # data = pd.read_csv(filepath, header=None, names=['x', 'y', 'yaw'])
+    # x = data['x'].values
+    # y = data['y'].values
+    # yaw = data['yaw'].values
+    # return x, y, yaw
 
 def print_vehicle_info(obs):
     for i, vehicle in enumerate(obs):
