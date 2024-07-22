@@ -34,43 +34,42 @@ def get_impulse(v1, v2_x, v2_y, theta1, theta2):
     return ca.fabs(imp)
 
 
-# def get_xcyc(x, y, theta, omega):  #
-#     R = (lr + lf) / (ca.tan(omega) + 0.00001)
-#     if omega < 0:
-#         R = -1 * R
-#     # if omega < 0 and x > 0:
-#     #    xc = ca.sin(theta*180/np.pi) * R + x
-#     #    yc = -ca.cos(theta*180/np.pi) * R + y
-#     # elif omega > 0 and x < 0:
-#     #    xc = -ca.sin(theta*180/np.pi) * R + x
-#     #    yc = ca.cos(theta*180/np.pi) * R + y
-#     # elif omega < 0 and x < 0:
-#     #    xc = -ca.sin(theta*180/np.pi) * R + x
-#     #    yc = -ca.cos(theta*180/np.pi) * R + y
-#     # elif omega > 0 and x > 0:
-#     #    xc = ca.sin(theta*180/np.pi) * R + x
-#     #    yc = ca.cos(theta*180/np.pi) * R + y
-#     dirction = np.array([ca.cos(theta), ca.sin(theta)])
-#     normal_vector = np.array([-ca.sin(theta), ca.cos(theta)])
-#     # cross = np.cross(dirction, normal_vector)
-#     cross = np.cross(np.append(dirction, 0), np.append(normal_vector, 0))[:2]
-#     if (omega < 0 and cross > 0) or (omega > 0 and cross < 0):
-#         normal_vector *= -1
-#     # print(x)
-#     circle_point = np.array([x + R * normal_vector[0], y + R * normal_vector[1]])
-#     return circle_point  # [xc,yc]
-
 def get_xcyc(x, y, theta, omega):  #
     R = (lr + lf) / (ca.tan(omega) + 0.00001)
     if omega < 0:
         R = -1 * R
+    # if omega < 0 and x > 0:
+    #    xc = ca.sin(theta*180/np.pi) * R + x
+    #    yc = -ca.cos(theta*180/np.pi) * R + y
+    # elif omega > 0 and x < 0:
+    #    xc = -ca.sin(theta*180/np.pi) * R + x
+    #    yc = ca.cos(theta*180/np.pi) * R + y
+    # elif omega < 0 and x < 0:
+    #    xc = -ca.sin(theta*180/np.pi) * R + x
+    #    yc = -ca.cos(theta*180/np.pi) * R + y
+    # elif omega > 0 and x > 0:
+    #    xc = ca.sin(theta*180/np.pi) * R + x
+    #    yc = ca.cos(theta*180/np.pi) * R + y
     dirction = np.array([ca.cos(theta), ca.sin(theta)])
     normal_vector = np.array([-ca.sin(theta), ca.cos(theta)])
-    cross = np.cross(np.append(dirction, 0), np.append(normal_vector, 0))[:2]
-    if (omega < 0 and np.all(cross > 0)) or (omega > 0 and np.all(cross < 0)):
+    cross = np.cross(dirction, normal_vector)
+    if (omega < 0 and cross > 0) or (omega > 0 and cross < 0):
         normal_vector *= -1
+    # print(x)
     circle_point = np.array([x + R * normal_vector[0], y + R * normal_vector[1]])
     return circle_point  # [xc,yc]
+
+# def get_xcyc(x, y, theta, omega):  #
+#     R = (lr + lf) / (ca.tan(omega) + 0.00001)
+#     if omega < 0:
+#         R = -1 * R
+#     dirction = np.array([ca.cos(theta), ca.sin(theta)])
+#     normal_vector = np.array([-ca.sin(theta), ca.cos(theta)])
+#     cross = np.cross(np.append(dirction, 0), np.append(normal_vector, 0))[:2]
+#     if (omega < 0 and np.all(cross > 0)) or (omega > 0 and np.all(cross < 0)):
+#         normal_vector *= -1
+#     circle_point = np.array([x + R * normal_vector[0], y + R * normal_vector[1]])
+#     return circle_point  # [xc,yc]
 
 
 
@@ -255,7 +254,7 @@ def prediction_state(x0, u, T, N):
 r_x = []  # 创建空表存放x1数据
 r_y = []
 r_theta = []
-with open('6.txt', 'r') as f1:  # 以只读形式打开txt文件
+with open('3.txt', 'r') as f1:  # 以只读形式打开txt文件
     for i, line in enumerate(f1):
         line = line.strip(',')  # 去掉换行符
         line = line.split(',')  # 分割掉两列数据之间的制表符
@@ -270,7 +269,7 @@ ynew = ynew.astype(float).tolist()
 thetanew = thetanew.astype(float).tolist()
 reference = np.array([r_x, r_y, r_theta])
 
-safe_distance = 5  # m
+safe_distance = 1  # m
 preview = 0  # 2
 v_der = 5.42  # 5.57 #6.82  #5
 
@@ -281,7 +280,7 @@ width = 1.98
 mass_ego = 2200  # (kg)
 mass_other = 2300  # (kg)
 
-social_theta = 75/ 180 * np.pi  # 15
+social_theta = 75 / 180 * np.pi  # 15
 # param for risk model   #45
 
 t_la = 1.8 # (s) lookahead time
@@ -328,8 +327,8 @@ if __name__ == '__main__':
     #         "type": "ContinuousAction"
     #     }
     # })
-    #   env.config["lanes_count"] = 2
-    #env.configure({"controlled_vehicles": 2})
+    # env.config["lanes_count"] = 2
+    # env.configure({"controlled_vehicles": 2})
     env.reset()
 
     opti = ca.Opti()
