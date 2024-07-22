@@ -102,24 +102,6 @@ def calculate_distances(current_state, obstacles):
     distances = [np.linalg.norm(current_position - np.array(obs)) for obs in obstacles]
     return distances
 
-def shift_movement(T, t0, u, x_n):
-    obs, reward, terminated, truncated, info = env.step(u)
-    print(f"obs structure: {obs}")  # Add this line to inspect the structure of obs
-    done = terminated or truncated
-    
-    # Adjust unpacking based on actual structure of obs
-    x, y, vx, vy, yaw = obs[0][:5]  # Assuming obs[0] is an array with at least 5 elements
-    env.render()
-    st = np.array([x, y, yaw, info['speed'], math.hypot(vx, vy)])
-    t = t0 + T
-    u_end = np.concatenate((u[1:], u[-1:]))
-    x_n = np.concatenate((x_n[1:], x_n[-1:]))
-    
-    obstacle_data = [vehicle for vehicle in obs[1:] if vehicle[0] == 1]
-    obstacles = np.array([[veh[1], veh[2]] for veh in obstacle_data])
-    
-    return t, st, u_end, x_n, obstacles, reward, done
-
 # Generate the global reference trajectory
 global_reference_trajectory = generate_global_reference_trajectory()
 
@@ -138,6 +120,7 @@ for step in range(max_steps):
     print(f"Step {step}: Detected Obstacles: {obstacles}, Distances: {distances}")
     
     print(f"Step {step}: Vehicle position: x = {current_state[0]}, y = {current_state[1]}")
+
     
     # Find the closest point on the reference trajectory
     closest_index = find_closest_point(current_state, global_reference_trajectory)
@@ -152,12 +135,9 @@ for step in range(max_steps):
     a, delta = action
     print(f"Step {step}: Location (x, y) = ({x:.2f}, {y:.2f}), Speed = {v:.2f} m/s, Acceleration = {a:.2f} m/s²")
     
-    # Update the state using shift_movement
-    t0 = step * dt
-    u = [a, delta]
-    t0, current_state, u, x_n, obstacles, reward, done = shift_movement(dt, t0, u, current_state)
+    obs, reward, terminated, truncated, info = env.step(action)
     
-    if done or closest_index >= len(global_reference_trajectory) - horizon:
+    if terminated or truncated or closest_index >= len(global_reference_trajectory) - horizon:
         print(f"Finished after {step+1} steps")
         break
 
