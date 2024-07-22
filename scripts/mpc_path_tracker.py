@@ -17,6 +17,8 @@ LENGTH = 5.0
 WIDTH = 2.0
 WHEELBASE = 2.5
 
+MIN_SPEED = 0
+
 def generate_global_reference_trajectory():
     trajectory = []
     x, y, v, heading = 0, 0, 10, np.pi/2  # Starting with 10 m/s speed
@@ -116,6 +118,9 @@ for step in range(max_steps):
     
     # Print the detected obstacles and their distances
     print(f"Step {step}: Detected Obstacles: {obstacles}, Distances: {distances}")
+    
+    print(f"Step {step}: Vehicle position: x = {current_state[0]}, y = {current_state[1]}")
+
     
     # Find the closest point on the reference trajectory
     closest_index = find_closest_point(current_state, global_reference_trajectory)
