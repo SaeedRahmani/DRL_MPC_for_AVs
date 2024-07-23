@@ -21,7 +21,7 @@ MIN_SPEED = 0
 
 def generate_global_reference_trajectory():
     trajectory = []
-    x, y, v, heading = 0, 0, 10, np.pi/2  # Starting with 10 m/s speed
+    x, y, v, heading = 2, 46, 10, np.pi/2  # Starting with 10 m/s speed
     
     # Go straight for 100 meters
     for _ in range(20):  # 1000 * 0.1 = 100 meters
@@ -66,7 +66,7 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
         obstacle_cost = 0
         for obs in obstacles:
             dist = np.linalg.norm(state[:2] - obs[:2])
-            if dist < 2.0:  # Only penalize if within a certain distance
+            if dist < 10.0:  # Only penalize if within a certain distance
                 obstacle_cost += 1000 / (dist + 1e-6)**2
         
         total_cost += state_cost + control_cost + obstacle_cost
