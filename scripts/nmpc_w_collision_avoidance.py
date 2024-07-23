@@ -10,7 +10,7 @@ obs, info = env.reset()
 
 # MPC parameters
 horizon = 12
-dt = 0.1
+dt = 1.2
 
 # Vehicle parameters
 LENGTH = 5.0
@@ -21,13 +21,18 @@ MIN_SPEED = 0
 
 def generate_global_reference_trajectory():
     trajectory = []
-    x, y, v, heading = 2, 46, 10, np.pi/2  # Starting with 10 m/s speed
+    x, y, v, heading = 2, 70, 10, np.pi/2  # Starting with 10 m/s speed
     
     # Go straight for 100 meters
-    for _ in range(20):  # 1000 * 0.1 = 100 meters
-        x += v * dt * math.cos(heading)
-        y += v * dt * math.sin(heading)
-        trajectory.append((x, y, v, heading))
+    for _ in range(1000):  # 1000 * 0.1 = 100 meters
+        if (y > 5):
+            x += v * dt * math.cos(heading)
+            y -= v * dt * math.sin(heading)  # Slight curve to the right
+            trajectory.append((x, y, v, heading))
+        else:
+            x += v * dt 
+            y -= 0
+            trajectory.append((x, y, v, heading))
     
     return trajectory
 
@@ -117,24 +122,24 @@ for step in range(max_steps):
     distances = calculate_distances(current_state, obstacles)
     
     # Print the detected obstacles and their distances
-    print(f"Step {step}: Detected Obstacles: {obstacles}, Distances: {distances}")
+    # print(f"Step {step}: Detected Obstacles: {obstacles}, Distances: {distances}")
     
     print(f"Step {step}: Vehicle position: x = {current_state[0]}, y = {current_state[1]}")
 
     
     # Find the closest point on the reference trajectory
     closest_index = find_closest_point(current_state, global_reference_trajectory)
-    
     # Use only the next 'horizon' points of the reference trajectory
     current_reference = global_reference_trajectory[closest_index:closest_index+horizon]
     
-    action = mpc_control(current_state, global_reference_trajectory, obstacles, closest_index)
+    action = mpc_control(current_state, current_reference, obstacles, closest_index)
     
     # Print the speed, location, and acceleration of the vehicle
     x, y, v, psi = current_state
     a, delta = action
-    print(f"Step {step}: Location (x, y) = ({x:.2f}, {y:.2f}), Speed = {v:.2f} m/s, Acceleration = {a:.2f} m/s²")
-    
+    print(f"Step {step}: Location (x, y) = ({x:.2f}, {y:.2f}), Speed = {v:.2f} m/s, Acceleration = {a:.2f} m/s²\n")
+    # print(f"Global Reference trajectory: {global_reference_trajectory}\n")
+    print(f"Step {step}: Closest index: {closest_index}, Current Reference trajectory: {current_reference}\n")
     obs, reward, terminated, truncated, info = env.step(action)
     
     if terminated or truncated or closest_index >= len(global_reference_trajectory) - horizon:
