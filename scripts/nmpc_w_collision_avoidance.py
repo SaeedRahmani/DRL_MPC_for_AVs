@@ -10,7 +10,7 @@ env = gym.make("intersection-v1", render_mode="rgb_array")
 obs, info = env.reset()
 
 # MPC parameters
-horizon = 10
+horizon = 6
 dt = 0.1
 
 # Vehicle parameters
@@ -22,28 +22,28 @@ MIN_SPEED = 0
 
 def generate_global_reference_trajectory():
     trajectory = []
-    x, y, v, heading = 2, 45, 10, - np.pi/2  # Starting with 10 m/s speed
+    x, y, v, heading = 2, 60, 10, - np.pi/2  # Starting with 10 m/s speed
     
     turn_start_y = 20
     radius = 10  # Radius of the curve
     turn_angle = np.pi / 2  # Total angle to turn (90 degrees for a left turn)
 
     # Go straight until reaching the turn start point
-    for _ in range(35):
+    for _ in range(50):
         x += 0
         y += v * dt * math.sin(heading)
         trajectory.append((x, y, v, heading))
     
     # Compute the turn
-    angle_increment = turn_angle / 20  # Divide the turn into 20 steps
-    for _ in range(20):
+    angle_increment = turn_angle / 30  # Divide the turn into 20 steps
+    for _ in range(30):
         heading += angle_increment  # Decrease heading to turn left
         x += v * dt * math.cos(heading)
         y += v * dt * math.sin(heading)
         trajectory.append((x, y, v, heading))
     
     # Continue straight after the turn
-    for _ in range(35):  # Continue for a bit after the turn
+    for _ in range(50):  # Continue for a bit after the turn
         x += v * dt * math.cos(heading)
         y += 0
         trajectory.append((x, y, v, heading))
@@ -86,7 +86,7 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
 
         ref_index = min(start_index + i, len(reference_trajectory) - 1)
         ref_x, ref_y, ref_v, ref_heading = reference_trajectory[ref_index]
-        state_cost = (state[0] - ref_x)**2 + (state[1] - ref_y)**2 + 0.5*(state[2] - ref_v)**2 + 0.001*(state[3] - ref_heading)**2
+        state_cost = 20*(state[0] - ref_x)**2 + 1*(state[1] - ref_y)**2 + 1*(state[2] - ref_v)**2 + 0*(state[3] - ref_heading)**2
         control_cost = 0.1 * np.sum(action**2) # Change this 
         
         obstacle_cost = 0
