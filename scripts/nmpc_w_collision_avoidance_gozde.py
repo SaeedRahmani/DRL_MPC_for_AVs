@@ -234,22 +234,26 @@ def get_imaginary_lines(x, y, psi, length=5.0):
     
     return (front_x, front_y), (back_x, back_y)
 
-def check_collisions(predicted_ego_path, predicted_obstacles, buffer=1.0, start_index=0):
+def check_collisions(predicted_ego_path, predicted_obstacles,  start_index=0):
     collision_points = []
-    buffer = 2.6
     collision_detected = False
+    buffer = 2.6
     half_width = buffer / 2
+    time_steps_window = int(1.0 / dt)  # Number of steps to check within the time window
     
     for step, (px, py) in enumerate(predicted_ego_path[start_index:]):
         ego_box = [(px - half_width, py - half_width), (px + half_width, py + half_width)]
         for obs_future_positions in predicted_obstacles:
-            for obs_step, (ox, oy) in enumerate(obs_future_positions):
-                if (ego_box[0][0] <= ox <= ego_box[1][0]) and (ego_box[0][1] <= oy <= ego_box[1][1]):
-                    collision_points.append((px, py))
-                    collision_detected = True
-                      # No need to check further if a collision is detected in this step
-    print(collision_points, "collision----")
+            for obs_step in range(max(0, step - time_steps_window), min(len(obs_future_positions), step + time_steps_window + 1)):
+                ox, oy = obs_future_positions[obs_step]
+                distance_to_obstacle = np.sqrt((px - ox)**2 + (py - oy)**2)
+                if distance_to_obstacle < 1.0:
+                    if (ego_box[0][0] <= ox <= ego_box[1][0]) and (ego_box[0][1] <= oy <= ego_box[1][1]):
+                        collision_points.append((px, py))
+                        collision_detected = True
+                          # No need to check further if a collision is detected in this step
     
+    print(collision_points, "collision----")
     return collision_points, collision_detected
 
 
