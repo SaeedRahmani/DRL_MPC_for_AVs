@@ -14,6 +14,7 @@ from scipy.optimize import minimize
 import math
 from timeit import default_timer as timer
 from .mpc_controller import *
+from highway_env.envs.common.observation import KinematicsObservation
 
 
 class IntersectionEnv(AbstractEnv):
@@ -27,6 +28,7 @@ class IntersectionEnv(AbstractEnv):
 
     def __init__(self, config: dict = None):
         super().__init__(config)
+        self._observation_type = KinematicObservation(self)
         self.solver_time = 0
         self.old_accel = 0
         self.steps = 0
@@ -48,6 +50,7 @@ class IntersectionEnv(AbstractEnv):
         self.resume_original_trajectory = False
         self.collision_wait_time = 0.3  # 0.3 seconds
         self.collision_timer = 0
+        
         
 
     @classmethod
@@ -205,6 +208,7 @@ class IntersectionEnv(AbstractEnv):
                                        float(self.ego_vehicle.position[1]),
                                        speed,
                                        self.ego_vehicle.heading])
+        self.original_reference_trajectory = generate_global_reference_trajectory()
         self.reference_trajectory = self.original_reference_trajectory.copy()
         self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
         return self._observation_type.observe()
@@ -401,16 +405,35 @@ class MultiAgentIntersectionEnv(IntersectionEnv):
         return config
 
 class ContinuousIntersectionEnv(IntersectionEnv):
-    @classmethod
+
     def __init__(self, config: dict = None):
-        
+        super().__init__(config)
+        self._observation_type = KinematicObservation(self)
+        self.solver_time = 0
+        self.old_accel = 0
+        self.steps = 0
+        self.controlled_vehicles = []
+        self.ego_vehicle = None
+        self.current_state = np.zeros(4)
+        self.reference_trajectory = None
+        self.obstacles = []
+        self.horizon = 6
+        self.dt = 0.1
+        self.LENGTH = 5.0
+        self.WIDTH = 2.0
+        self.WHEELBASE = 2.5
+        self.MIN_SPEED = 0
+        self.closest_index = 0
         self.original_reference_trajectory = generate_global_reference_trajectory()
         self.reference_trajectory = self.original_reference_trajectory.copy()
         self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
         self.resume_original_trajectory = False
         self.collision_wait_time = 0.3  # 0.3 seconds
         self.collision_timer = 0
+    
+    
 
+    @classmethod
     def default_config(cls) -> dict:
         config = super().default_config()
         config.update(
