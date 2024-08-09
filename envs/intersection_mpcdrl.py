@@ -1,6 +1,6 @@
 from typing import Dict, Tuple, Text
 import numpy as np
-from gym.envs.registration import register
+from gymnasium.envs.registration import register,registry
 from gym import spaces
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv, MultiAgentWrapper
@@ -13,22 +13,17 @@ import matplotlib.pyplot as plt
 from scipy.optimize import minimize
 import math
 from timeit import default_timer as timer
-from .mpc_controller import *
-from highway_env.envs.common.observation import KinematicsObservation
+from highway_env.envs.mpc_controller import *
 
 
-class IntersectionEnv(AbstractEnv):
 
-    ACTIONS: Dict[int, str] = {
-        0: 'SLOWER',
-        1: 'IDLE',
-        2: 'FASTER'
-    }
-    ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
+class intersectionmpc_env(AbstractEnv):
+
+    
     def __init__(self, config: dict = None):
         super().__init__(config)
-        self._observation_type = KinematicObservation(self)
+        
         self.solver_time = 0
         self.old_accel = 0
         self.steps = 0
@@ -51,48 +46,47 @@ class IntersectionEnv(AbstractEnv):
         self.collision_wait_time = 0.3  # 0.3 seconds
         self.collision_timer = 0
         
-        
 
     @classmethod
     def default_config(cls) -> dict:
         config = super().default_config()
-        config.update({
-            "observation": {
-                "type": "Kinematics",
-                "vehicles_count": 7,
-                "features": ["presence", "x", "y", "vx", "vy", "cos_h", "sin_h"],
-                "features_range": {
-                    "x": [-100, 100],
-                    "y": [-100, 100],
-                    "vx": [-20, 20],
-                    "vy": [-20, 20],
+        config.update(
+            {
+                "observation": {
+                    "type": "Kinematics",
+                    "vehicles_count": 5,
+                    
+                    "normalize": False,
+                    "features": [
+                        "presence",
+                        "x",
+                        "y",
+                        "vx",
+                        "vy",
+                        "long_off",
+                        "lat_off",
+                        "ang_off",
+                    ],
                 },
-                "absolute": True,
-                "flatten": False,
-                "observe_intentions": False
-            },
-            "action": {
-                "type": "DiscreteMetaAction",
-                "longitudinal": True,
-                "lateral": False,
-                "target_speeds": [0, 4.5, 9]
-            },
-            "duration": 13,  # [s]
-            "destination": "o1",
-            "controlled_vehicles": 1,
-            "initial_vehicle_count": 10,
-            "spawn_probability": 0.6,
-            "screen_width": 600,
-            "screen_height": 600,
-            "centering_position": [0.5, 0.6],
-            "scaling": 5.5 * 1.3,
-            "collision_reward": -5,
-            "high_speed_reward": 1,
-            "arrived_reward": 1,
-            "reward_speed_range": [7.0, 9.0],
-            "normalize_reward": False,
-            "offroad_terminal": False
-        })
+                "action": {
+                    "type": "ContinuousAction",
+                    "steering_range": [-np.pi / 3, np.pi / 3],
+                    #"acceleration_range": [-10.0, 10.0],
+                    "longitudinal": True,
+                    "lateral": True,
+                    "dynamical": True,
+                },
+                "collision_reward": -5,
+                "arrived_reward": 1,
+                "high_speed_reward": 1,
+                "on_road_reward": 1,
+                "policy_frequency":7,
+                "normalize_reward": False
+                
+                
+                
+            }
+        )
         return config
 
     def _reward(self, action: int) -> float:
@@ -381,99 +375,15 @@ class IntersectionEnv(AbstractEnv):
                and vehicle.lane.local_coordinates(vehicle.position)[0] >= exit_distance
 
 
-class MultiAgentIntersectionEnv(IntersectionEnv):
-    @classmethod
-    def default_config(cls) -> dict:
-        config = super().default_config()
-        config.update({
-            "action": {
-                 "type": "MultiAgentAction",
-                 "action_config": {
-                     "type": "DiscreteMetmpc_actionction",
-                     "lateral": False,
-                     "longitudinal": True
-                 }
-            },
-            "observation": {
-                "type": "MultiAgentObservation",
-                "observation_config": {
-                    "type": "Kinematics"
-                }
-            },
-            "controlled_vehicles": 2
-        })
-        return config
 
-class ContinuousIntersectionEnv(IntersectionEnv):
 
-    def __init__(self, config: dict = None):
-        super().__init__(config)
-        self._observation_type = KinematicObservation(self)
-        self.solver_time = 0
-        self.old_accel = 0
-        self.steps = 0
-        self.controlled_vehicles = []
-        self.ego_vehicle = None
-        self.current_state = np.zeros(4)
-        self.reference_trajectory = None
-        self.obstacles = []
-        self.horizon = 6
-        self.dt = 0.1
-        self.LENGTH = 5.0
-        self.WIDTH = 2.0
-        self.WHEELBASE = 2.5
-        self.MIN_SPEED = 0
-        self.closest_index = 0
-        self.original_reference_trajectory = generate_global_reference_trajectory()
-        self.reference_trajectory = self.original_reference_trajectory.copy()
-        self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
-        self.resume_original_trajectory = False
-        self.collision_wait_time = 0.3  # 0.3 seconds
-        self.collision_timer = 0
-    
-    
+env_id = 'intersectionmpc-01'
 
-    @classmethod
-    def default_config(cls) -> dict:
-        config = super().default_config()
-        config.update(
-            {
-                "observation": {
-                    "type": "Kinematics",
-                    "vehicles_count": 5,
-                    
-                    "normalize": False,
-                    "features": [
-                        "presence",
-                        "x",
-                        "y",
-                        "vx",
-                        "vy",
-                        "long_off",
-                        "lat_off",
-                        "ang_off",
-                    ],
-                },
-                "action": {
-                    "type": "ContinuousAction",
-                    "steering_range": [-np.pi / 3, np.pi / 3],
-                    #"acceleration_range": [-10.0, 10.0],
-                    "longitudinal": True,
-                    "lateral": True,
-                    "dynamical": True,
-                },
-                "collision_reward": -5,
-                "arrived_reward": 1,
-                "high_speed_reward": 1,
-                "on_road_reward": 1,
-                "policy_frequency":7,
-                "normalize_reward": False
-                
-                
-                
-            }
-        )
-        return config
 
-TupleMultiAgentIntersectionEnv = MultiAgentWrapper(MultiAgentIntersectionEnv)
-
+if env_id not in registry:
+    register(
+        id=env_id,
+        entry_point='highway_env.envs.intersectionmpc_env:intersectionmpc_env',  # Replace with actual module and class
+        max_episode_steps=1000,
+    )
+    print("registered", env_id)
