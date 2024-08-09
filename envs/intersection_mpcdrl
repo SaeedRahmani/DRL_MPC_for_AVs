@@ -32,7 +32,7 @@ class IntersectionEnv(AbstractEnv):
         self.steps = 0
         self.controlled_vehicles = []
         self.ego_vehicle = None
-        self.current_state = None
+        self.current_state = np.zeros(4)
         self.reference_trajectory = None
         self.obstacles = []
         self.horizon = 6
@@ -41,6 +41,9 @@ class IntersectionEnv(AbstractEnv):
         self.WIDTH = 2.0
         self.WHEELBASE = 2.5
         self.MIN_SPEED = 0
+        self.closest_index = 0
+        self.reference_trajectory = generate_global_reference_trajectory()
+        
 
     @classmethod
     def default_config(cls) -> dict:
@@ -140,6 +143,12 @@ class IntersectionEnv(AbstractEnv):
     def _reset(self) -> None:
         self._make_road()
         self._make_vehicles(self.config["initial_vehicle_count"])
+        print(self.ego_vehicle.position[0],"-------------------")
+        self.current_state = np.array([float(self.ego_vehicle.position[0]),
+                                       float(self.ego_vehicle.position[1]),
+                                       self.ego_vehicle.velocity,
+                                       self.ego_vehicle.heading])
+        return self._observation_type.observe()
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, dict]:
         # Use the action to update the environment's state
@@ -147,9 +156,9 @@ class IntersectionEnv(AbstractEnv):
         
         # Gather observations
         obs = self._observation_type.observe()
-
+        print("usıng the current state in the step function")
         # Check for collisions
-        collision_points, collision_detected = check_collisions(self.current_state, self.obstacles)
+        
         
         # Calculate reward
         reward = self._reward(action)
@@ -162,13 +171,16 @@ class IntersectionEnv(AbstractEnv):
         info = self._info(obs, action)
 
         return obs, reward, terminated, truncated, info
-    global_reference_trajectory = generate_global_reference_trajectory()
+    
+    
+
     def simulate(self, action):
         for k in range(1):  # Adjust the number of simulation steps as needed
             start = timer()
+            self.collision_points, self.collision_detected = check_collisions(self.current_state, self.obstacles)
             # Run your MPC optimization here (assuming you call it `mpc_control`)
-            closest_index = find_closest_point(self.current_state, self.global_reference_trajectory)
-            mpc_action = mpc_control(self.current_state, self.reference_trajectory, self.obstacles,closest_index,self.collision_detected)
+            self.closest_index = find_closest_point(self.current_state, self.global_reference_trajectory)
+            mpc_action = mpc_control(self.current_state, self.reference_trajectory, self.obstacles,self.closest_index,self.collision_detected)
             end = timer()
             self.solver_time = end - start
 
@@ -182,14 +194,17 @@ class IntersectionEnv(AbstractEnv):
             self.road.act()
             self.road.step(self.dt)
 
+            print("getting current state before in sim func", self.current_state)
+
             # Update the current state for the solver
-            self.current_state = np.array([self.ego_vehicle.position[0],
-                                           self.ego_vehicle.position[1],
+            self.current_state = np.array([float(self.ego_vehicle.position[0]),
+                                           float(self.ego_vehicle.position[1]),
                                            self.ego_vehicle.velocity,
                                            self.ego_vehicle.heading])
+            print("getting current state after in sim func", self.current_state)
 
             obs = self.observation.observe()
-            self._automatic_rendering()
+            
             self.old_accel = mpc_action[0]
             self.steps += 1
 
@@ -271,33 +286,59 @@ class IntersectionEnv(AbstractEnv):
         for t in range(n_vehicles - 1):
             self._spawn_vehicle(np.linspace(0, 80, n_vehicles)[t])
         for _ in range(simulation_steps):
-            [(self.road.act(), self.road.step(1 / self.config["simulation_frequency"])) for _ in range(self.config["simulation_frequency"])]
+            [
+                (
+                    self.road.act(),
+                    self.road.step(1 / self.config["simulation_frequency"]),
+                )
+                for _ in range(self.config["simulation_frequency"])
+            ]
 
         # Challenger vehicle
-        self._spawn_vehicle(60, spawn_probability=1, go_straight=True, position_deviation=0.1, speed_deviation=0)
+        self._spawn_vehicle(
+            60,
+            spawn_probability=1,
+            go_straight=True,
+            position_deviation=0.1,
+            speed_deviation=0,
+        )
 
         # Controlled vehicles
         self.controlled_vehicles = []
         for ego_id in range(0, self.config["controlled_vehicles"]):
-            ego_lane = self.road.network.get_lane(("o{}".format(ego_id % 4), "ir{}".format(ego_id % 4), 0))
-            destination = self.config["destination"] or "o" + str(self.np_random.randint(1, 4))
+            ego_lane = self.road.network.get_lane(
+                ("o{}".format(ego_id % 4), "ir{}".format(ego_id % 4), 0)
+            )
+            destination = self.config["destination"] or "o" + str(
+                self.np_random.integers(1, 4)
+            )
             ego_vehicle = self.action_type.vehicle_class(
-                             self.road,
-                             ego_lane.position(60 + 5*self.np_random.normal(1), 0),
-                             speed=ego_lane.speed_limit,
-                             heading=ego_lane.heading_at(60))
+                self.road,
+                ego_lane.position(60 + 5 * self.np_random.normal(1), 0),
+                speed=ego_lane.speed_limit,
+                heading=ego_lane.heading_at(60),
+            )
             try:
                 ego_vehicle.plan_route_to(destination)
-                ego_vehicle.speed_index = ego_vehicle.speed_to_index(ego_lane.speed_limit)
-                ego_vehicle.target_speed = ego_vehicle.index_to_speed(ego_vehicle.speed_index)
+                ego_vehicle.speed_index = ego_vehicle.speed_to_index(
+                    ego_lane.speed_limit
+                )
+                ego_vehicle.target_speed = ego_vehicle.index_to_speed(
+                    ego_vehicle.speed_index
+                )
             except AttributeError:
                 pass
 
             self.road.vehicles.append(ego_vehicle)
             self.controlled_vehicles.append(ego_vehicle)
             for v in self.road.vehicles:  # Prevent early collisions
-                if v is not ego_vehicle and np.linalg.norm(v.position - ego_vehicle.position) < 20:
+                if (
+                    v is not ego_vehicle
+                    and np.linalg.norm(v.position - ego_vehicle.position) < 20
+                ):
                     self.road.vehicles.remove(v)
+        self.ego_vehicle = ego_vehicle
+
 
     def _spawn_vehicle(self,
                        longitudinal: float = 0,
@@ -344,7 +385,7 @@ class MultiAgentIntersectionEnv(IntersectionEnv):
             "action": {
                  "type": "MultiAgentAction",
                  "action_config": {
-                     "type": "DiscreteMetaAction",
+                     "type": "DiscreteMetmpc_actionction",
                      "lateral": False,
                      "longitudinal": True
                  }
