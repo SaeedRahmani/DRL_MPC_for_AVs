@@ -42,7 +42,12 @@ class IntersectionEnv(AbstractEnv):
         self.WHEELBASE = 2.5
         self.MIN_SPEED = 0
         self.closest_index = 0
-        self.reference_trajectory = generate_global_reference_trajectory()
+        self.original_reference_trajectory = generate_global_reference_trajectory()
+        self.reference_trajectory = self.original_reference_trajectory.copy()
+        self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
+        self.resume_original_trajectory = False
+        self.collision_wait_time = 0.3  # 0.3 seconds
+        self.collision_timer = 0
         
 
     @classmethod
@@ -140,75 +145,70 @@ class IntersectionEnv(AbstractEnv):
         info["agents_dones"] = tuple(self._agent_is_terminal(vehicle) for vehicle in self.controlled_vehicles)
         return info
 
-    def _reset(self) -> None:
-        self._make_road()
-        self._make_vehicles(self.config["initial_vehicle_count"])
-        print(self.ego_vehicle.position[0],"-------------------")
-        self.current_state = np.array([float(self.ego_vehicle.position[0]),
-                                       float(self.ego_vehicle.position[1]),
-                                       self.ego_vehicle.velocity,
-                                       self.ego_vehicle.heading])
-        return self._observation_type.observe()
-
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, dict]:
-        # Use the action to update the environment's state
-        self.simulate(action)
-        
-        # Gather observations
-        obs = self._observation_type.observe()
-        print("usıng the current state in the step function")
-        # Check for collisions
-        
-        
-        # Calculate reward
-        reward = self._reward(action)
-        
-        # Determine if the episode is terminated or truncated
-        terminated = self._is_terminated()
-        truncated = self._is_truncated()
-        
-        # Additional info
-        info = self._info(obs, action)
-
-        return obs, reward, terminated, truncated, info
-    
-    
-
     def simulate(self, action):
         for k in range(1):  # Adjust the number of simulation steps as needed
             start = timer()
-            self.collision_points, self.collision_detected = check_collisions(self.current_state, self.obstacles)
-            # Run your MPC optimization here (assuming you call it `mpc_control`)
-            self.closest_index = find_closest_point(self.current_state, self.global_reference_trajectory)
-            mpc_action = mpc_control(self.current_state, self.reference_trajectory, self.obstacles,self.closest_index,self.collision_detected)
+            self.collision_points, self.collision_detected = check_collisions(self.ref_path, self.obstacles)
+            
+            self.closest_index = find_closest_point(self.current_state, self.reference_trajectory)
+            current_reference = self.reference_trajectory[self.closest_index:self.closest_index+self.horizon]
+            
+            if self.collision_detected:
+                self.reference_trajectory = generate_global_reference_trajectory(self.collision_points)
+                self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
+                self.resume_original_trajectory = False
+                self.collision_timer = 0
+            elif not self.resume_original_trajectory and not self.collision_detected:
+                self.collision_timer += self.dt
+                if self.collision_timer >= self.collision_wait_time:
+                    self.reference_trajectory = self.original_reference_trajectory
+                    self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
+                    self.resume_original_trajectory = True
+            
+            mpc_action = mpc_control(self.current_state, current_reference, self.obstacles, self.closest_index, self.collision_detected)
             end = timer()
             self.solver_time = end - start
 
-            # Apply the action from MPC
             self.ego_vehicle.act({
                 "acceleration": mpc_action[0],
                 "steering": mpc_action[1]
             })
 
-            # Step the simulation
             self.road.act()
             self.road.step(self.dt)
-
-            print("getting current state before in sim func", self.current_state)
-
-            # Update the current state for the solver
+            speed = np.sqrt(self.ego_vehicle.velocity[0]**2 + self.ego_vehicle.velocity[1]**2)
+            
             self.current_state = np.array([float(self.ego_vehicle.position[0]),
                                            float(self.ego_vehicle.position[1]),
-                                           self.ego_vehicle.velocity,
+                                           speed,
                                            self.ego_vehicle.heading])
-            print("getting current state after in sim func", self.current_state)
 
-            obs = self.observation.observe()
-            
             self.old_accel = mpc_action[0]
             self.steps += 1
 
         self.enable_auto_render = False
+
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, dict]:
+        self.simulate(action)
+        obs = self._observation_type.observe()
+        reward = self._reward(action)
+        terminated = self._is_terminated()
+        truncated = self._is_truncated()
+        info = self._info(obs, action)
+        return obs, reward, terminated, truncated, info
+    
+    def _reset(self) -> None:
+        self._make_road()
+        self._make_vehicles(self.config["initial_vehicle_count"])
+        speed = np.sqrt(self.ego_vehicle.velocity[0]**2 + self.ego_vehicle.velocity[1]**2)
+        self.current_state = np.array([float(self.ego_vehicle.position[0]),
+                                       float(self.ego_vehicle.position[1]),
+                                       speed,
+                                       self.ego_vehicle.heading])
+        self.reference_trajectory = self.original_reference_trajectory.copy()
+        self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
+        return self._observation_type.observe()
+    
 
     
 
@@ -402,6 +402,15 @@ class MultiAgentIntersectionEnv(IntersectionEnv):
 
 class ContinuousIntersectionEnv(IntersectionEnv):
     @classmethod
+    def __init__(self, config: dict = None):
+        
+        self.original_reference_trajectory = generate_global_reference_trajectory()
+        self.reference_trajectory = self.original_reference_trajectory.copy()
+        self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
+        self.resume_original_trajectory = False
+        self.collision_wait_time = 0.3  # 0.3 seconds
+        self.collision_timer = 0
+
     def default_config(cls) -> dict:
         config = super().default_config()
         config.update(
