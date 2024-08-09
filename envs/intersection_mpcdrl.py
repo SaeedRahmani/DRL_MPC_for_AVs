@@ -1,7 +1,7 @@
 from typing import Dict, Tuple, Text
 import numpy as np
 from gymnasium.envs.registration import register,registry
-from gym import spaces
+from gymnasium import spaces
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv, MultiAgentWrapper
 from highway_env.road.lane import LineType, StraightLane, CircularLane, AbstractLane
@@ -19,7 +19,7 @@ from highway_env.envs.mpc_controller import *
 
 
 class intersectionmpc_env(AbstractEnv):
-
+    metadata = {"render.modes":["human","rgb_array"]}
     
     def __init__(self, config: dict = None):
         super().__init__(config)
@@ -76,12 +76,23 @@ class intersectionmpc_env(AbstractEnv):
                     "lateral": True,
                     "dynamical": True,
                 },
+                "duration": 13,  # [s]
+                "destination": "o1",
+                "controlled_vehicles": 1,
+                "initial_vehicle_count": 7,
+                "spawn_probability": 0.7,
+                "screen_width": 600,
+                "screen_height": 600,
+                "centering_position": [0.5, 0.6],
+                "scaling": 5.5 * 1.3,
                 "collision_reward": -5,
                 "arrived_reward": 1,
                 "high_speed_reward": 1,
                 "on_road_reward": 1,
                 "policy_frequency":7,
-                "normalize_reward": False
+                "reward_speed_range": [7.0, 9.0],
+                "normalize_reward": False,
+                "offroad_terminal": False
                 
                 
                 
@@ -164,6 +175,7 @@ class intersectionmpc_env(AbstractEnv):
             
             mpc_action = mpc_control(self.current_state, current_reference, self.obstacles, self.closest_index, self.collision_detected)
             end = timer()
+            print("NEW ENV ==============================================================")
             self.solver_time = end - start
 
             self.ego_vehicle.act({
@@ -187,10 +199,7 @@ class intersectionmpc_env(AbstractEnv):
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, dict]:
         self.simulate(action)
-        obs = self._observation_type.observe()
-        reward = self._reward(action)
-        terminated = self._is_terminated()
-        truncated = self._is_truncated()
+        obs, reward, terminated, truncated, info = super().step(action)
         info = self._info(obs, action)
         return obs, reward, terminated, truncated, info
     
@@ -205,7 +214,7 @@ class intersectionmpc_env(AbstractEnv):
         self.original_reference_trajectory = generate_global_reference_trajectory()
         self.reference_trajectory = self.original_reference_trajectory.copy()
         self.ref_path = [(x, y) for x, y, v, psi in self.reference_trajectory]
-        return self._observation_type.observe()
+        
     
 
     
@@ -377,7 +386,7 @@ class intersectionmpc_env(AbstractEnv):
 
 
 
-env_id = 'intersectionmpc-01'
+env_id = 'intersectionmpc-v5'
 
 
 if env_id not in registry:
