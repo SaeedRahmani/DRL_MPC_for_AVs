@@ -42,7 +42,7 @@ resume_original_trajectory = False
 collision_wait_time = 0.3  # 0.3 seconds
 collision_timer = 0
 
-model = SAC('MlpPolicy', env,
+"""model = SAC('MlpPolicy', env,
             policy_kwargs=dict(net_arch=[256, 256]),
             learning_rate=0.0005,  # Adjusted learning rate
             buffer_size=15000,  # Increased buffer size
@@ -63,7 +63,7 @@ model = SAC('MlpPolicy', env,
 model.learn(total_timesteps=int(1000),progress_bar=True)  
 
 
-model.save("intersection_sac11/model")
+model.save("intersection_sac11/model")"""
 
 model = SAC.load("intersection_sac11/model")
 for step in range(max_steps):
