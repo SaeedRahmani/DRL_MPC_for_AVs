@@ -302,7 +302,7 @@ class intersectiondrl_env(AbstractEnv):
         self.real_path.append((current_state[0], current_state[1]))
         extended_horizon = 12  #prediction horizon for other vehicles
         self.predicted_obstacles = predict_others_future_positions(obstacles, current_state[2], extended_horizon, 0.1)
-        plot_trajectory(self.real_path, self.ref_path, self.predicted_positions, self.collision_points, directions)
+        plot_trajectory(self.real_path, self.ref_path, self.predicted_obstacles, self.collision_points, directions)
         return obs, reward, terminated, truncated, info
     
     def _reset(self) -> None:
