@@ -42,7 +42,28 @@ resume_original_trajectory = False
 collision_wait_time = 0.3  # 0.3 seconds
 collision_timer = 0
 
+model = SAC('MlpPolicy', env,
+            policy_kwargs=dict(net_arch=[256, 256]),
+            learning_rate=0.0005,  # Adjusted learning rate
+            buffer_size=15000,  # Increased buffer size
+            learning_starts=200,  # Increased learning starts
+            batch_size=64,  # Increased batch size
+            tau=0.02,  # Adjusted tau
+            gamma=0.8,  # Adjusted gamma
+            train_freq=1,
+            gradient_steps=1,  # Do as many gradient steps as steps done in the environment during the rollout
+            optimize_memory_usage=False,
+            verbose=1,
+            device='auto',
+            tensorboard_log="intersection_sac/")
 
+
+# uncomment the lines below if you want to train a new model
+
+model.learn(total_timesteps=int(1000),progress_bar=True)  
+
+
+model.save("intersection_sac11/model")
 
 model = SAC.load("intersection_sac11/model")
 for step in range(max_steps):
