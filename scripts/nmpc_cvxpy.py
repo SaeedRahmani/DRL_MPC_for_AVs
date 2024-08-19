@@ -5,7 +5,7 @@ import cvxpy as cp
 import math
 import matplotlib.pyplot as plt
 
-# Initialize the environment
+# Initialize the environment (This is only MPC without RL)
 env = gym.make("intersection-v1", render_mode="rgb_array")
 obs, info = env.reset()
 
