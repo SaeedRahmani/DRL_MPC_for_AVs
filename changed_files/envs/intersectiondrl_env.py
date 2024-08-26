@@ -17,9 +17,6 @@ from highway_env.envs.mpc_controller import *
 from highway_env.envs.common.observation import KinematicObservation
 
 
-
-
-
 class intersectiondrl_env(AbstractEnv):
     
     
@@ -51,6 +48,7 @@ class intersectiondrl_env(AbstractEnv):
         self.sim = 0
         self._observation_type = KinematicObservation(self)
         self.training_mode = False
+        self.collision_detected = False
 
     @classmethod
     def default_config(cls) -> dict:
@@ -130,11 +128,20 @@ class intersectiondrl_env(AbstractEnv):
 
     def _agent_rewards(self, action: int, vehicle: Vehicle) -> Dict[Text, float]:
         """Per-agent per-objective reward signal."""
+        collision_reward = vehicle.crashed
         scaled_speed = utils.lmap(vehicle.speed, self.config["reward_speed_range"], [0, 1])
         #added
         desired_speed = utils.lmap(action[2], [-1, 1], [self.config["reward_speed_range"][0], self.config["reward_speed_range"][1]])
         speed_diff = abs(vehicle.speed - desired_speed)
         speed_reward = np.exp(-1.0 * speed_diff) * 0.1
+
+        if not hasattr(self, 'collision_detected'):
+            self.collision_detected = False
+
+        if self.collision_detected and not vehicle.crashed:
+        # Increase the speed alignment reward or add an additional bonus reward
+            speed_reward *= 2  # Increase the speed alignment reward
+            collision_reward = 0 
 
         return {
             "collision_reward": vehicle.crashed,
@@ -169,18 +176,20 @@ class intersectiondrl_env(AbstractEnv):
     def local_to_global(self,x_local, y_local, vehicle_position, vehicle_heading):
     # Convert local coordinates (x_local, y_local) to global coordinates
         x_global = (vehicle_position[0] + (x_local * np.cos(vehicle_heading) - y_local * np.sin(vehicle_heading)))
-        y_global = vehicle_position[1] + (x_local * np.sin(vehicle_heading) + y_local * np.cos(vehicle_heading))
+        y_global = (vehicle_position[1] + (x_local * np.sin(vehicle_heading) + y_local * np.cos(vehicle_heading)))
         return x_global, y_global
 
-    def predict_vehicle_positions(self,vehicle, ego_heading, time_horizon=2.0):
+    def predict_vehicle_positions(self,vehicle, ego_heading, time_horizon=12.0):
         dt = 0.1
         positions = []
-        current_position = np.array(vehicle.position)
+        current_position = np.array(vehicle.position) 
         current_heading = vehicle.heading
         current_speed = vehicle.speed
+        directions = []
 
     # Determine the direction relative to the ego vehicle
-        direction = determine_direction(ego_heading, current_heading)
+        direction = determine_direction(ego_heading, -current_heading)
+        directions.append(direction)
         
 
     # Adjust the speed based on the direction
@@ -189,7 +198,7 @@ class intersectiondrl_env(AbstractEnv):
             current_speed += np.sqrt(vehicle.velocity[0]**2 + vehicle.velocity[1]**2)
         elif direction == "opposite":
         # Keep the speed as it is if moving in the opposite direction
-            current_speed = current_speed  # This line is just illustrative; no change needed
+            current_speed -= np.sqrt(vehicle.velocity[0]**2 + vehicle.velocity[1]**2) 
 
         for _ in np.arange(0, time_horizon, dt):
         # Predict the next position
@@ -197,69 +206,79 @@ class intersectiondrl_env(AbstractEnv):
             dy = current_speed * np.sin(current_heading) * dt
             next_position = current_position + np.array([dx, dy])
         
-            positions.append(tuple(next_position))
+            positions.append(next_position.copy())
             current_position = next_position  # Update to the new position
+        
 
-        return positions
+        return positions, directions
 
 
 
-    def check_collisions(self, trajectory, other_vehicles, safety_distance=1.0, start_index=0, time_horizon=2.0):
+    def check_collisions(self, trajectory, other_vehicles, safety_distance=2.0, start_index=0, time_horizon=2.0):
         collision_points = []
-        collision_detected = False
-        predicted_positions = []  # Initialize this list
-        buffer = 2.6
-        half_width = buffer / 2 
+        self.collision_detected = False
+        predicted_positions = []  # Initialize this list to hold all vehicles' predicted positions
+        all_directions = []  # This will hold directions for all vehicles
+        buffer = 2.8
+        half_width = buffer / 2
         dt = 0.1
         time_steps_window = int(1.0 / dt)
 
         ego_position = self.ego_vehicle.position
         ego_heading = self.ego_vehicle.heading
+        length = 5.0
 
+        back_x = ego_position[0] - (length * np.cos(ego_heading))
+        back_y = ego_position[1] - (length * np.sin(ego_heading))
+
+    # Iterate over all other vehicles
         for vehicle in other_vehicles:
             if vehicle is self.ego_vehicle:
                 continue  # Skip collision check with the ego vehicle itself
 
-            vehicle_position = np.array(vehicle.position)
-            relative_position = vehicle_position - ego_position
+        # Predict future positions of the vehicle over the time horizon
+            vehicle_predicted_positions, directions = self.predict_vehicle_positions(vehicle, self.ego_vehicle.heading, time_horizon)
         
-        # Project the relative position onto the ego vehicle's heading direction
-            heading_vector = np.array([np.cos(ego_heading), np.sin(ego_heading)])
-            projection = np.dot(relative_position, heading_vector)
+            should_consider_for_collision = True
         
-        # Only consider vehicles in front of the ego vehicle (projection > 0)
-            if projection <= 0:
-                continue
-            
-            # Predict future positions of the vehicle over the time horizon
-            vehicle_predicted_positions = self.predict_vehicle_positions(vehicle, self.ego_vehicle.heading, time_horizon)
-            predicted_positions.append(vehicle_predicted_positions)
+        # Check if vehicle's predicted positions are within the safety distance behind the ego vehicle
+            for vx, vy in vehicle_predicted_positions:
+                distance_to_back = np.sqrt((back_x - vx) ** 2 + (back_y - vy) ** 2)
+                if distance_to_back < safety_distance:
+                    should_consider_for_collision = False
+                    break
+        
+            if should_consider_for_collision:
+                predicted_positions.append(vehicle_predicted_positions)  # Store positions for this vehicle
+                all_directions.append(directions)  # Store direction info for this vehicle
 
+    # Check for collisions with the ego vehicle's trajectory
         for step, (x, y) in enumerate(trajectory[start_index:]):
-            # Convert trajectory point to global coordinates relative to ego vehicle
+        # Convert trajectory point to global coordinates relative to ego vehicle
             traj_x_global, traj_y_global = self.local_to_global(x, y, ego_position, ego_heading)
             ego_box = [(traj_x_global - half_width, traj_y_global - half_width), 
-                (traj_x_global + half_width, traj_y_global + half_width)]
+                   (traj_x_global + half_width, traj_y_global + half_width)]
         
             for vehicle_predicted_positions in predicted_positions:
-                for obs_step in range(max(0, step - time_steps_window), min(len(trajectory), step + time_steps_window + 1)):
-                    if obs_step < len(vehicle_predicted_positions):
-                        ox, oy = vehicle_predicted_positions[obs_step]  # Get the predicted position
-                        distance_to_obstacle = np.sqrt((traj_x_global - ox) ** 2 + (traj_y_global - oy) ** 2)
-                
-                        if distance_to_obstacle < safety_distance:
-                            # Check if the obstacle is within the ego vehicle's buffer box
-                            if (ego_box[0][0] <= ox <= ego_box[1][0]) and (ego_box[0][1] <= oy <= ego_box[1][1]):
-                                collision_points.append((x, y))  # Record the point in local coordinates
-                                collision_detected = True
-                                break
+                for obs_step in range(max(0, step - time_steps_window), min(len(vehicle_predicted_positions), step + time_steps_window + 1)):
+                    ox, oy = vehicle_predicted_positions[obs_step]  # Get the predicted position
+                    distance_to_obstacle = np.sqrt((traj_x_global - ox) ** 2 + (traj_y_global - oy) ** 2)
 
-        # Debugging print to show the result of the collision check
-        if collision_detected:
+                    if distance_to_obstacle < safety_distance:
+                    # Check if the obstacle is within the ego vehicle's buffer box
+                        if (ego_box[0][0] <= ox <= ego_box[1][0]) and (ego_box[0][1] <= oy <= ego_box[1][1]):
+                            collision_points.append((x, y))  # Record the point in local coordinates
+                            self.collision_detected = True
+                            break
+
+    # Debugging print to show the result of the collision check
+        if self.collision_detected:
             print(f"Collision detected at points: {collision_points}")
-        
 
-        return collision_points, collision_detected, predicted_positions
+    # Debugging print to show all predicted positions
+        #print(predicted_positions, "-----------------predicted positions----------")
+
+        return collision_points, self.collision_detected, predicted_positions, all_directions
 
     def simulate(self, action):
         for k in range(1):  # Adjust the number of simulation steps as needed
@@ -274,7 +293,7 @@ class intersectiondrl_env(AbstractEnv):
             self.closest_index = find_closest_point(self.current_state, self.reference_trajectory)
             current_reference = self.reference_trajectory[self.closest_index:self.closest_index+self.horizon]
             
-            self.collision_points, self.collision_detected, self.predicted_positions = self.check_collisions(self.ref_path, self.road.vehicles,safety_distance=2.0,start_index=self.closest_index)
+            self.collision_points, self.collision_detected, self.predicted_positions, self.directions = self.check_collisions(self.ref_path, self.road.vehicles,safety_distance=2.0,start_index=self.closest_index)
             print(self.collision_points,"collision****")
             if self.collision_detected:
                 self.reference_trajectory = generate_global_reference_trajectory(self.collision_points,speed_override)
@@ -302,7 +321,10 @@ class intersectiondrl_env(AbstractEnv):
 
             self.road.act()
             self.road.step(self.dt)
-            speed = np.sqrt(self.ego_vehicle.velocity[0]**2 + self.ego_vehicle.velocity[1]**2)
+            if self.collision_detected:
+                speed = speed_override
+            else:
+                speed = np.sqrt(self.ego_vehicle.velocity[0]**2 + self.ego_vehicle.velocity[1]**2)
             
             self.current_state = np.array([float(self.ego_vehicle.position[0]),
                                            float(self.ego_vehicle.position[1]),
@@ -312,21 +334,29 @@ class intersectiondrl_env(AbstractEnv):
             self.old_accel = mpc_action[0]
             
             self.steps += 1
-            self.solver_time = end - start
+            self.solver_time = end - start 
         return speed_override
 
     def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, dict]:
         self.simulate(action)
+        self.collision_points, self.collision_detected, self.predicted_positions, self.directions = self.check_collisions(self.ref_path, self.road.vehicles)
+        if not hasattr(self, 'real_path'):
+            self.real_path = []
+        self.real_path.append((self.current_state[0], self.current_state[1]))
         obs, reward, terminated, truncated, info = super().step(action)
         info = self._info(obs, action)
         current_state, obstacles, directions = process_observation(obs)
         self.real_path.append((current_state[0], current_state[1]))
         extended_horizon = 10  #prediction horizon for other vehicles
-        self.predicted_obstacles = predict_others_future_positions(obstacles, current_state[2], extended_horizon, 0.1)
+        self.predicted_obstacles = predict_others_future_positions(obstacles, self.current_state[2], extended_horizon, 0.1)
+        
+        
         # plot_trajectory(self.real_path, self.ref_path, self.predicted_obstacles, self.collision_points, directions)
         if not self.training_mode:
-            plot_trajectory(self.real_path, self.ref_path, self.predicted_obstacles, self.collision_points, directions)
-            
+            plot_trajectory(self.real_path, self.ref_path, self.predicted_positions, self.collision_points, self.directions)
+        
+        
+
         return obs, reward, terminated, truncated, info
 
     def set_training_mode(self, is_training: bool):
