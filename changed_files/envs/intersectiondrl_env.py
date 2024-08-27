@@ -222,11 +222,12 @@ class intersectiondrl_env(AbstractEnv):
         buffer = 2.6
         half_width = buffer / 2
         dt = 0.1
-        time_steps_window = int(1.0 / dt)
+        time_steps_window = int(1.2 / dt)
 
         ego_position = self.ego_vehicle.position
         ego_heading = self.ego_vehicle.heading
         length = 5.0
+        ego_velocity = np.array(self.ego_vehicle.velocity)
 
         back_x = ego_position[0] - (length * np.cos(ego_heading))
         back_y = ego_position[1] - (length * np.sin(ego_heading))
@@ -238,19 +239,30 @@ class intersectiondrl_env(AbstractEnv):
 
         # Predict future positions of the vehicle over the time horizon
             vehicle_predicted_positions, directions = self.predict_vehicle_positions(vehicle, self.ego_vehicle.heading, time_horizon)
-        
-            should_consider_for_collision = True
+
+            vehicle_velocity = np.array(vehicle.velocity)
+            relative_velocity = ego_velocity - vehicle_velocity
+
+            vehicle_position = np.array(vehicle.position)
+            relative_position_to_ego = vehicle_position - np.array(ego_position)
+            # Calculate the dot product with ego's heading to see if vehicle is in front or behind
+            forward_vector = np.array([np.cos(ego_heading), np.sin(ego_heading)])
+            dot_product = np.dot(relative_position_to_ego, forward_vector)
+
+            if dot_product < 0:
+                # Vehicle is behind the ego vehicle, skip collision check for this vehicle
+                continue
         
         # Check if vehicle's predicted positions are within the safety distance behind the ego vehicle
-            for vx, vy in vehicle_predicted_positions:
+            """for vx, vy in vehicle_predicted_positions:
                 distance_to_back = np.sqrt((back_x - vx) ** 2 + (back_y - vy) ** 2)
                 if distance_to_back < safety_distance:
                     should_consider_for_collision = False
-                    break
+                    break"""
         
-            if should_consider_for_collision:
-                predicted_positions.append(vehicle_predicted_positions)  # Store positions for this vehicle
-                all_directions.append(directions)  # Store direction info for this vehicle
+            
+            predicted_positions.append(vehicle_predicted_positions)  # Store positions for this vehicle
+            all_directions.append(directions)  # Store direction info for this vehicle
 
     # Check for collisions with the ego vehicle's trajectory
         for step, (x, y) in enumerate(trajectory[start_index:]):
@@ -262,21 +274,25 @@ class intersectiondrl_env(AbstractEnv):
             for vehicle_predicted_positions in predicted_positions:
                 for obs_step in range(max(0, step - time_steps_window), min(len(vehicle_predicted_positions), step + time_steps_window + 1)):
                     ox, oy = vehicle_predicted_positions[obs_step]  # Get the predicted position
-
+                    relative_position = np.array([ox - traj_x_global, oy - traj_y_global])
+                    distance_to_vehicle = np.linalg.norm(relative_position)
+                    speed_towards_each_other = np.dot(relative_velocity, relative_position) / distance_to_vehicle if distance_to_vehicle > 0 else 0
+                
+                    if speed_towards_each_other > 0:  # Vehicles are moving towards each other
+                        ttc = distance_to_vehicle / speed_towards_each_other
+                    else:
+                        ttc = np.inf 
                 # Improved collision check using bounding box overlap
-                    if (ego_box[0][0] <= ox <= ego_box[1][0]) and (ego_box[0][1] <= oy <= ego_box[1][1]):
+                    if (ego_box[0][0] <= ox <= ego_box[1][0]) and (ego_box[0][1] <= oy <= ego_box[1][1]) or (ttc < time_horizon and distance_to_vehicle < safety_distance):
                         collision_points.append((x, y))  # Record the point in local coordinates
                         self.collision_detected = True
                         print(f"Collision detected at: {(x, y)} with vehicle at {(ox, oy)}")  # Print collision details
                         return collision_points, self.collision_detected, predicted_positions, all_directions
 
     # Debugging print to show the result of the collision check
-        
-
-  
 
         return collision_points, self.collision_detected, predicted_positions, all_directions
-
+    
 
     def simulate(self, action):
         for k in range(1):  # Adjust the number of simulation steps as needed
