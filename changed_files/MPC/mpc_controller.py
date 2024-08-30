@@ -1,10 +1,7 @@
-
-
 import numpy as np
 from scipy.optimize import minimize
 import math
 import matplotlib.pyplot as plt
-
 
 
 # MPC parameters
@@ -18,44 +15,47 @@ WHEELBASE = 2.5
 
 MIN_SPEED = 0
 
+
 def generate_global_reference_trajectory(collision_points=None, speed_override=None):
     trajectory = []
-    x, y, v, heading = 2, 50, 10, - np.pi/2  # Starting with 10 m/s speed
-    
-    if speed_override is not None:
-        v = speed_override  # Use the overridden speed if provided
-    
+    x, y, v, heading, v_ref = 2, 50, 10, -np.pi/2,10  # Starting with 10 m/s speed
     turn_start_y = 20
     radius = 5  # Radius of the curve
     turn_angle = np.pi / 2  # Total angle to turn (90 degrees for a left turn)
 
     # Go straight until reaching the turn start point
     for _ in range(40):
-        if collision_points and any(abs(x - cx) < 0.1 and abs(y - cy) < 0.1 for cx, cy in collision_points):
-            v = 0  # Set speed to zero near collision points
+        #if collision_points and (x, y) in collision_points:
+        v_ref = speed_override if speed_override is not None else 0  # Set speed based on DRL agent's decision
+        #print(v_ref,"---------------------------****-----fırst branch")
         x += 0
         y += v * dt * math.sin(heading)
-        trajectory.append((x, y, v, heading))
+        trajectory.append((x, y, v_ref, heading))
     
     # Compute the turn
     angle_increment = turn_angle / 20  # Divide the turn into 20 steps
     for _ in range(20):
-        if collision_points and any(abs(x - cx) < 0.1 and abs(y - cy) < 0.1 for cx, cy in collision_points):
-            v = 0  # Set speed to zero near collision points
+        #if collision_points and (x, y) in collision_points:
+        v_ref = speed_override if speed_override is not None else 0  # Set speed based on DRL agent's decision
+        #print(v_ref,"--------------------------******------second branch")
         heading += angle_increment  # Decrease heading to turn left
         x -= v * dt * math.cos(heading)
         y += v * dt * math.sin(heading)
-        trajectory.append((x, y, v, heading))
+     
+        trajectory.append((x, y, v_ref, heading))
     
     # Continue straight after the turn
     for _ in range(25):  # Continue for a bit after the turn
-        if collision_points and any(abs(x - cx) < 0.1 and abs(y - cy) < 0.1 for cx, cy in collision_points):
-            v = 0  # Set speed to zero near collision points
+        #if collision_points and (x, y) in collision_points:
+        v_ref = speed_override if speed_override is not None else 0  # Set speed based on DRL agent's decision
+        #print(v_ref,"-------------------------------******-----thiırd branch")
         x -= v * dt * math.cos(heading)
         y += 0
-        trajectory.append((x, y, v, heading))
+       
+        trajectory.append((x, y, v_ref, heading))
     
     return trajectory
+
 
 def vehicle_model(state, action):
     x, y, v, psi = state
@@ -84,6 +84,7 @@ def predict_vehicle_positions(state, action, steps, dt=0.1):
         state = vehicle_model(state, action)
         predictions.append(state[:2])  # Append only x, y positions
     
+    #print("predicted obstacles-----",predictions)
     return predictions
 
 def predict_others_future_positions(obstacles, ego_speed, steps, dt):
@@ -111,6 +112,7 @@ def predict_others_future_positions(obstacles, ego_speed, steps, dt):
         action = [0, 0]  # Assuming constant velocity model for simplicity
         future_positions.append(predict_vehicle_positions(state, action, steps, dt))
     
+    
     return future_positions
 
 def cost_function(u, current_state, reference_trajectory, obstacles, start_index, dt, collision_detected):
@@ -134,8 +136,8 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
         perp_deviation = dx * np.sin(ref_heading) - dy * np.cos(ref_heading)
         para_deviation = dx * np.cos(ref_heading) + dy * np.sin(ref_heading)
 
-        state_cost = 20 * perp_deviation**2 + 1 * para_deviation**2 + 1 * (state[2] - ref_v)**2 + 0.1 * (state[3] - ref_heading)**2
-        control_cost = 0.1 * action[0]**2 + 0.1 * action[1]**2
+        state_cost = 20 * perp_deviation**2 + 1 * para_deviation**2 + 1000* (state[2] - ref_v)**2 + 0.1 * (state[3] - ref_heading)**2
+        control_cost = 0.01 * action[0]**2 + 0.1 * action[1]**2
         
         obstacle_cost = 0
         for obs_future_positions in predicted_obstacles:
@@ -149,7 +151,7 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
         total_cost += state_cost + control_cost + obstacle_cost
         
         if collision_detected:
-            total_cost += 5000 * state[2]**2  # Penalize speed if a collision is detected
+            total_cost += 300 * state[2]**2  # Penalize speed if a collision is detected
 
         if i > 0:
             prev_action = u[(i-1)*2:i*2]
@@ -172,7 +174,7 @@ def mpc_control(current_state, reference_trajectory, obstacles, start_index, col
     result = minimize(cost_function, u0, args=(current_state, reference_trajectory, obstacles, start_index, dt, collision_detected), 
                       method='SLSQP', bounds=bounds, options={'maxiter': 100})
     
-    return result.x[:2]  # Return only the first action
+    return result.x[:2]  # Return action
 
 def determine_direction(ego_psi, other_psi):
     # Calculate the absolute difference in heading
@@ -227,10 +229,14 @@ def plot_trajectory(real_path, ref_path, predicted_obstacles, collision_points, 
         plt.scatter(real_path[-1][0], real_path[-1][1], color='blue', s=50, label='Current Position')  # Mark the current position
 
     # Plot predicted positions of other vehicles
+    num_paths = len(predicted_obstacles)
+    cmap = plt.get_cmap('tab10') 
+
     for i, (obs_future_positions, direction) in enumerate(zip(predicted_obstacles, directions)):
         if obs_future_positions:  # Ensure there are predicted positions
+            color = cmap(i % num_paths)
             label = f'Predicted Obstacle Path {i} ({direction})'
-            plt.plot(*zip(*obs_future_positions), 'g--', label=label)
+            plt.plot(*zip(*obs_future_positions), linestyle='--', color=color, label=label)
 
     # Highlight collision points
     for collision_point in collision_points:
@@ -241,7 +247,8 @@ def plot_trajectory(real_path, ref_path, predicted_obstacles, collision_points, 
     for px, py in real_path:
         rectangle = plt.Rectangle((px - half_width, py - half_width), buffer, buffer, linewidth=1, edgecolor='purple', facecolor='none', linestyle='--')
         plt.gca().add_patch(rectangle)
-    
+    plt.xlim(-60, 60)
+    plt.ylim(-60,60)
     plt.xlabel('X Position')
     plt.ylabel('Y Position')
     plt.title('Vehicle Trajectory and Reference Path')
