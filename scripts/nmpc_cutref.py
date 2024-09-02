@@ -1,11 +1,13 @@
-
-
+import gymnasium as gym
+import highway_env
 import numpy as np
 from scipy.optimize import minimize
 import math
 import matplotlib.pyplot as plt
 
-
+# Initialize the environment
+env = gym.make("intersection-v1", render_mode="rgb_array")
+obs, info = env.reset()
 
 # MPC parameters
 horizon = 6
@@ -20,7 +22,7 @@ MIN_SPEED = 0
 
 def generate_global_reference_trajectory(collision_points=None):
     trajectory = []
-    x, y, v, heading = 2, 50, 10, - np.pi/2  # Starting with 10 m/s speed
+    x, y, v, v_f, heading = 2, 50, 10, 0, - np.pi/2  # Starting with 10 m/s speed
     
     turn_start_y = 20
     radius = 5  # Radius of the curve
@@ -85,7 +87,7 @@ def predict_vehicle_positions(state, action, steps, dt=0.1):
     
     return predictions
 
-def predict_others_future_positions(obstacles, ego_speed, steps, dt):
+def predict_others_future_positions(obstacles, steps, dt):
     """ Predict future positions of all obstacles """
     future_positions = []
     
@@ -95,16 +97,10 @@ def predict_others_future_positions(obstacles, ego_speed, steps, dt):
             vx, vy = 0, 0  # Default to zero velocity if not provided
             psi = 0
         else:
-            x, y, vx, vy, psi, direction = obstacle
-            if direction == "same":
-                # Add ego vehicle speed to the obstacle's speed
-                v = np.sqrt(vx**2 + vy**2) + ego_speed
-                # Recompute vx and vy based on the new speed
-                vx = v * np.cos(psi)
-                vy = v * np.sin(psi)
-            else:
-                v = np.sqrt(vx**2 + vy**2)
+            x, y, vx, vy = obstacle
+            psi = np.arctan2(vy, vx) if vx or vy else 0
 
+        v = np.sqrt(vx**2 + vy**2)
         state = [x, y, v, psi]
         
         action = [0, 0]  # Assuming constant velocity model for simplicity
@@ -117,8 +113,7 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
     
     total_cost = 0
     extended_horizon = 10  # Extend the prediction horizon for other vehicles
-    ego_speed = current_state[2]
-    predicted_obstacles = predict_others_future_positions(obstacles, ego_speed, extended_horizon, dt)
+    predicted_obstacles = predict_others_future_positions(obstacles, extended_horizon, dt)
     
     for i in range(horizon):
         action = u[i*2:(i+1)*2]
@@ -173,18 +168,6 @@ def mpc_control(current_state, reference_trajectory, obstacles, start_index, col
     
     return result.x[:2]  # Return only the first action
 
-def determine_direction(ego_psi, other_psi):
-    # Calculate the absolute difference in heading
-    angle_diff = abs(ego_psi - other_psi)
-    # Normalize the difference to the range [0, pi]
-    angle_diff = angle_diff % np.pi
-    # Determine direction based on a threshold (e.g., 45 degrees in radians)
-    threshold = np.pi / 4
-    if angle_diff < threshold or angle_diff > (np.pi - threshold):
-        return "same"
-    else:
-        return "opposite"
-
 def process_observation(obs):
     ego_vehicle = obs[0]
     
@@ -197,26 +180,21 @@ def process_observation(obs):
     current_state = np.array([x, y, v, psi])
     
     obstacles = []
-    directions = []
     for vehicle in obs[1:]:
         if vehicle[0] == 1:
             ox, oy = vehicle[1], vehicle[2]
             ovx = vehicle[3] if len(vehicle) > 3 else 0  # Set default velocity components if not available
             ovy = vehicle[4] if len(vehicle) > 4 else 0
-            o_v = np.sqrt(ovx**2 + ovy**2)
-            o_psi = np.arctan2(ovy, ovx)
-            direction = determine_direction(psi, o_psi)
-            obstacles.append([ox, oy, ovx, ovy, o_psi, direction])
-            directions.append(direction)
+            obstacles.append([ox, oy, ovx, ovy])
     
-    return current_state, obstacles, directions
+    return current_state, obstacles
 
 def calculate_distances(current_state, obstacles):
     current_position = current_state[:2]
     distances = [np.linalg.norm(current_position - np.array(obs[:2])) for obs in obstacles]
     return distances
 
-def plot_trajectory(real_path, ref_path, predicted_obstacles, collision_points, directions):
+def plot_trajectory(real_path, ref_path, predicted_obstacles, collision_points):
     plt.clf()  # Clear the current figure to update the plot dynamically
     buffer = 2.6
     if ref_path:  # Check if reference path is not empty
@@ -226,10 +204,9 @@ def plot_trajectory(real_path, ref_path, predicted_obstacles, collision_points, 
         plt.scatter(real_path[-1][0], real_path[-1][1], color='blue', s=50, label='Current Position')  # Mark the current position
 
     # Plot predicted positions of other vehicles
-    for i, (obs_future_positions, direction) in enumerate(zip(predicted_obstacles, directions)):
+    for i, obs_future_positions in enumerate(predicted_obstacles):
         if obs_future_positions:  # Ensure there are predicted positions
-            label = f'Predicted Obstacle Path {i} ({direction})'
-            plt.plot(*zip(*obs_future_positions), 'g--', label=label)
+            plt.plot(*zip(*obs_future_positions), 'g--', label=f'Predicted Obstacle Path {i}')
 
     # Highlight collision points
     for collision_point in collision_points:
@@ -276,3 +253,80 @@ def check_collisions(predicted_ego_path, predicted_obstacles, start_index=0):
                         collision_detected = True
                         break  # Stop checking further obstacles if collision is detected
     return collision_points, collision_detected
+
+
+# Generate the global reference trajectory
+original_reference_trajectory = generate_global_reference_trajectory()
+global_reference_trajectory = original_reference_trajectory.copy()
+ref_path = [(x, y) for x, y, v, psi in global_reference_trajectory]
+
+# Variables to store real path
+real_path = []
+plt.ion()
+# Main simulation loop
+max_steps = 500
+crashed = 0
+sim = 0
+resume_original_trajectory = False
+collision_wait_time = 0.3  # 0.3 seconds
+collision_timer = 0
+
+for step in range(max_steps):
+    env.render()
+    
+    current_state, obstacles = process_observation(obs)
+    print('current state:', current_state)
+    real_path.append((current_state[0], current_state[1]))  # Append current position to the path
+
+    # Predict future positions of obstacles
+    extended_horizon = 14  # Extended prediction horizon for other vehicles
+    predicted_obstacles = predict_others_future_positions(obstacles, extended_horizon, dt)
+    
+    # Find the closest point on the reference trajectory
+    closest_index = find_closest_point(current_state, global_reference_trajectory)
+    # Use only the next 'horizon' points of the reference trajectory
+    current_reference = global_reference_trajectory[closest_index:closest_index+horizon]
+
+    # Check for collisions
+    collision_points, collision_detected = check_collisions(ref_path, predicted_obstacles, start_index=closest_index)
+    
+    if collision_detected:
+        global_reference_trajectory = generate_global_reference_trajectory(collision_points)
+        ref_path = [(x, y) for x, y, v, psi in global_reference_trajectory]
+        resume_original_trajectory = False
+        collision_timer = 0
+    elif not resume_original_trajectory and not collision_detected:
+        collision_timer += dt
+        if collision_timer >= collision_wait_time:
+            global_reference_trajectory = original_reference_trajectory
+            ref_path = [(x, y) for x, y, v, psi in global_reference_trajectory]
+            resume_original_trajectory = True
+
+    action = mpc_control(current_state, current_reference, obstacles, closest_index, collision_detected)
+    
+    x, y, v, psi = current_state
+    a, delta = action
+    print(f"Step {step}: Location (x, y) = ({x:.2f}, {y:.2f}), Speed = {v:.2f} m/s, Acceleration = {a:.2f} m/s²\n")
+    print(f"Step {step}: Closest index: {closest_index}, Current Reference trajectory: {current_reference}\n")
+    obs, reward, done, truncated, info = env.step(action)
+    
+    # Update the current state after taking the action
+    current_state, _ = process_observation(obs)
+    
+    # Update the plot
+    plot_trajectory(real_path, ref_path, predicted_obstacles, collision_points)
+    
+    if info["crashed"]:
+        crashed += 1
+    
+    if done or truncated or closest_index >= len(global_reference_trajectory) - horizon:
+        print(f"Finished after {step+1} steps")
+        obs, info = env.reset()
+        real_path = []
+        sim += 1
+        print("crash count:", crashed, "sim count:", sim)
+        continue
+
+plt.ioff()  # Turn off interactive mode
+plt.show()
+env.close()

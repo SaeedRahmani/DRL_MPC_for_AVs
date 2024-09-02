@@ -6,11 +6,8 @@ import math
 import matplotlib.pyplot as plt
 import mpc_controller as mpc
 
-env = gym.make("intersectionmpc-v1", render_mode="rgb_array")
-
-
+env = gym.make("intersection-v1")
 obs, info = env.reset()
-
 
 # MPC parameters
 horizon = 6
@@ -58,7 +55,7 @@ for step in range(max_steps):
     collision_points, collision_detected = mpc.check_collisions(ref_path, predicted_obstacles, start_index=closest_index)
     
     if collision_detected:
-        global_reference_trajectory = mpc.generate_global_reference_trajectory(collision_points, speed_override = None)
+        global_reference_trajectory = mpc.generate_global_reference_trajectory(collision_points)
         ref_path = [(x, y) for x, y, v, psi in global_reference_trajectory]
         resume_original_trajectory = False
         collision_timer = 0
@@ -76,7 +73,6 @@ for step in range(max_steps):
     print(f"Step {step}: Location (x, y) = ({x:.2f}, {y:.2f}), Speed = {v:.2f} m/s, Acceleration = {a:.2f} m/s²\n")
     print(f"Step {step}: Closest index: {closest_index}, Current Reference trajectory: {current_reference}\n")
     obs, reward, done, truncated, info = env.step(action)
-    
     
     # Update the current state after taking the action
     current_state, obstacles,directions = mpc.process_observation(obs)

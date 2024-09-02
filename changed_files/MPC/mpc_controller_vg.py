@@ -1,10 +1,7 @@
-
-
 import numpy as np
 from scipy.optimize import minimize
 import math
 import matplotlib.pyplot as plt
-
 
 
 # MPC parameters
@@ -18,9 +15,9 @@ WHEELBASE = 2.5
 
 MIN_SPEED = 0
 
-def generate_global_reference_trajectory(collision_points=None):
+def generate_global_reference_trajectory(collision_points=None, speed_override=None):
     trajectory = []
-    x, y, v, heading = 2, 50, 10, - np.pi/2  # Starting with 10 m/s speed
+    x, y, v, heading = 2, 50, 10, -np.pi/2  # Starting with 10 m/s speed
     
     turn_start_y = 20
     radius = 5  # Radius of the curve
@@ -29,7 +26,8 @@ def generate_global_reference_trajectory(collision_points=None):
     # Go straight until reaching the turn start point
     for _ in range(40):
         if collision_points and (x, y) in collision_points:
-            v = 0  # Set speed to zero at collision points
+            v = speed_override if speed_override is not None else 0  # Set speed based on DRL agent's decision
+            print(v,"---------------------------****-----")
         x += 0
         y += v * dt * math.sin(heading)
         trajectory.append((x, y, v, heading))
@@ -38,7 +36,8 @@ def generate_global_reference_trajectory(collision_points=None):
     angle_increment = turn_angle / 20  # Divide the turn into 20 steps
     for _ in range(20):
         if collision_points and (x, y) in collision_points:
-            v = 0  # Set speed to zero at collision points
+            v = speed_override if speed_override is not None else 0  # Set speed based on DRL agent's decision
+            print(v,"--------------------------******------")
         heading += angle_increment  # Decrease heading to turn left
         x -= v * dt * math.cos(heading)
         y += v * dt * math.sin(heading)
@@ -48,13 +47,15 @@ def generate_global_reference_trajectory(collision_points=None):
     # Continue straight after the turn
     for _ in range(25):  # Continue for a bit after the turn
         if collision_points and (x, y) in collision_points:
-            v = 0  # Set speed to zero at collision points
+            v = speed_override if speed_override is not None else 0  # Set speed based on DRL agent's decision
+            print(v,"-------------------------------******-")
         x -= v * dt * math.cos(heading)
         y += 0
        
         trajectory.append((x, y, v, heading))
     
     return trajectory
+
 
 def vehicle_model(state, action):
     x, y, v, psi = state
@@ -171,7 +172,7 @@ def mpc_control(current_state, reference_trajectory, obstacles, start_index, col
     result = minimize(cost_function, u0, args=(current_state, reference_trajectory, obstacles, start_index, dt, collision_detected), 
                       method='SLSQP', bounds=bounds, options={'maxiter': 100})
     
-    return result.x[:2]  # Return only the first action
+    return result.x[:2]  # Return action
 
 def determine_direction(ego_psi, other_psi):
     # Calculate the absolute difference in heading
