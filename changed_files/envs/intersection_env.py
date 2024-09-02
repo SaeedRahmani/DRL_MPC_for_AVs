@@ -297,6 +297,47 @@ class ContinuousIntersectionEnv(IntersectionEnv):
                     "type": "Kinematics",
                     "vehicles_count": 10,
                     
+                    "features": [
+                        "presence",
+                        "x",
+                        "y",
+                        "vx",
+                        "vy",
+                        "long_off",
+                        "lat_off",
+                        "ang_off",
+                    ],
+                },
+                "action": {
+                    "type": "ContinuousAction",
+                    "steering_range": [-np.pi / 3, np.pi / 3],
+                    "acceleration_range": [-10.0, 10.0],
+                    "longitudinal": True,
+                    "lateral": True,
+                    "dynamical": True,
+                },
+                "collision_reward": -1,
+                "arrived_reward": 1,
+                "high_speed_reward": 0.2,
+                "on_road_reward": 0.5,
+                "policy_frequency":7,
+                "normalize_reward": True
+            
+                
+            }
+        )
+        return config
+    
+class ContinuousIntersectionEnvMpc(IntersectionEnv):
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "observation": {
+                    "type": "Kinematics",
+                    "vehicles_count": 10,
+                    
                     "normalize": False,
                     "features": [
                         "presence",
@@ -328,5 +369,7 @@ class ContinuousIntersectionEnv(IntersectionEnv):
             }
         )
         return config
+    
+
 
 TupleMultiAgentIntersectionEnv = MultiAgentWrapper(MultiAgentIntersectionEnv)
