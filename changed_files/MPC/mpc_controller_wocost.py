@@ -3,7 +3,7 @@ from scipy.optimize import minimize
 import math
 import matplotlib.pyplot as plt
 
-"""mpc controller for pure mpc"""
+"""mpc controller for mpcdrl combined"""
 
 # MPC parameters
 horizon = 6
@@ -26,32 +26,34 @@ def generate_global_reference_trajectory(collision_points=None, speed_override=N
 
     # Go straight until reaching the turn start point
     for _ in range(40):
-        if collision_points and (x, y) in collision_points:
-            v =  0  # Set speed based on DRL agent's decision
+        #if collision_points and (x, y) in collision_points:
+        v_ref = speed_override if speed_override is not None else 10  # Set speed based on DRL agent's decision
+        #print(v_ref,"---------------------------****-----fırst branch")
         x += 0
         y += v * dt * math.sin(heading)
-        trajectory.append((x, y, v, heading))
+        trajectory.append((x, y, v_ref, heading))
     
     # Compute the turn
     angle_increment = turn_angle / 20  # Divide the turn into 20 steps
     for _ in range(20):
-        if collision_points and (x, y) in collision_points:
-            v =  0  # Set speed based on DRL agent's decision
+        #if collision_points and (x, y) in collision_points:
+        v_ref = speed_override if speed_override is not None else 10  # Set speed based on DRL agent's decision
+        #print(v_ref,"--------------------------******------second branch")
         heading += angle_increment  # Decrease heading to turn left
         x -= v * dt * math.cos(heading)
         y += v * dt * math.sin(heading)
      
-        trajectory.append((x, y, v, heading))
+        trajectory.append((x, y, v_ref, heading))
     
     # Continue straight after the turn
     for _ in range(25):  # Continue for a bit after the turn
-        if collision_points and (x, y) in collision_points:
-            v =  0  # Set speed based on DRL agent's decision
-        
+        #if collision_points and (x, y) in collision_points:
+        v_ref = speed_override if speed_override is not None else 10  # Set speed based on DRL agent's decision
+        #print(v_ref,"-------------------------------******-----thiırd branch")
         x -= v * dt * math.cos(heading)
         y += 0
        
-        trajectory.append((x, y, v, heading))
+        trajectory.append((x, y, v_ref, heading))
     
     return trajectory
 
@@ -135,22 +137,22 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
         perp_deviation = dx * np.sin(ref_heading) - dy * np.cos(ref_heading)
         para_deviation = dx * np.cos(ref_heading) + dy * np.sin(ref_heading)
 
-        state_cost = 20 * perp_deviation**2 + 1 * para_deviation**2 + 1* (state[2] - ref_v)**2 + 0.1 * (state[3] - ref_heading)**2
+        state_cost = 20 * perp_deviation**2 + 1 * para_deviation**2 + 1000* (state[2] - ref_v)**2 + 0.1 * (state[3] - ref_heading)**2
         control_cost = 0.01 * action[0]**2 + 0.1 * action[1]**2
         
-        obstacle_cost = 0
-        for obs_future_positions in predicted_obstacles:
+       
+        """for obs_future_positions in predicted_obstacles:
             obs_x, obs_y = obs_future_positions[min(i, len(obs_future_positions) - 1)]
             distance_to_obstacle = np.sqrt((state[0] - obs_x)**2 + (state[1] - obs_y)**2)
             if distance_to_obstacle < 1.0:
                 obstacle_cost += 1000 / (distance_to_obstacle + 1e-6)**2
             else:
-                obstacle_cost += 100 / (distance_to_obstacle + 1e-6)**2
+                obstacle_cost += 100 / (distance_to_obstacle + 1e-6)**2"""
         
-        total_cost += state_cost + control_cost + obstacle_cost
+        total_cost += state_cost + control_cost #+ obstacle_cost
         
-        if collision_detected:
-            total_cost += 3000 * state[2]**2  # Penalize speed if a collision is detected
+        # if collision_detected:
+        #     total_cost += 300 * state[2]**2  # Penalize speed if a collision is detected
 
         if i > 0:
             prev_action = u[(i-1)*2:i*2]
@@ -161,7 +163,7 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
         final_state_cost = 100 * ((state[0] - desired_final_state[0])**2 + (state[1] - desired_final_state[1])**2 + 
                                   (state[2] - desired_final_state[2])**2 + (state[3] - desired_final_state[3])**2)
         
-        total_cost += state_cost + control_cost + obstacle_cost + final_state_cost 
+        total_cost += state_cost + control_cost + final_state_cost 
     
     return total_cost
 

@@ -6,6 +6,8 @@ import math
 import matplotlib.pyplot as plt
 import mpc_controller as mpc
 
+"""pure mpc with not normalized intersectionv1 for testing"""
+
 env = gym.make("intersectionmpc-v1", render_mode="rgb_array")
 
 

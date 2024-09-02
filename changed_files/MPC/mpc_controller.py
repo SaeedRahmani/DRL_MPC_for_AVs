@@ -3,6 +3,7 @@ from scipy.optimize import minimize
 import math
 import matplotlib.pyplot as plt
 
+"""mpc controller for mpcdrl combined"""
 
 # MPC parameters
 horizon = 6
@@ -140,18 +141,18 @@ def cost_function(u, current_state, reference_trajectory, obstacles, start_index
         control_cost = 0.01 * action[0]**2 + 0.1 * action[1]**2
         
        
-        """for obs_future_positions in predicted_obstacles:
+        for obs_future_positions in predicted_obstacles:
             obs_x, obs_y = obs_future_positions[min(i, len(obs_future_positions) - 1)]
             distance_to_obstacle = np.sqrt((state[0] - obs_x)**2 + (state[1] - obs_y)**2)
             if distance_to_obstacle < 1.0:
                 obstacle_cost += 1000 / (distance_to_obstacle + 1e-6)**2
             else:
-                obstacle_cost += 100 / (distance_to_obstacle + 1e-6)**2"""
+                obstacle_cost += 100 / (distance_to_obstacle + 1e-6)**2
         
-        total_cost += state_cost + control_cost #+ obstacle_cost
+        total_cost += state_cost + control_cost + obstacle_cost
         
-        # if collision_detected:
-        #     total_cost += 300 * state[2]**2  # Penalize speed if a collision is detected
+        if collision_detected:
+            total_cost += 300 * state[2]**2  # Penalize speed if a collision is detected
 
         if i > 0:
             prev_action = u[(i-1)*2:i*2]
