@@ -121,8 +121,7 @@ class ContinuousAction(ActionType):
             raise ValueError("Either longitudinal and/or lateral control must be enabled")
         self.dynamical = dynamical
         self.clip = clip
-        # self.size = sum([self.lateral, self.longitudinal, self.speed_control])
-        self.size = 3
+        self.size = sum([self.lateral, self.longitudinal, self.speed_control])
         self.last_action = np.zeros(self.size)
 
     def space(self) -> spaces.Box:

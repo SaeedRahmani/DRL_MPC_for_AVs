@@ -21,6 +21,12 @@ def register_highway_envs():
         max_episode_steps=1000,
     )
 
+    register(
+        id="intersectiondrl-v5",
+        entry_point='highway_env.envs:intersectiondrl_env',  # Replace with actual module and class
+        max_episode_steps=1000,
+    )
+
     # highway_env.py
     register(
         id='highway-v0',
@@ -41,6 +47,11 @@ def register_highway_envs():
     register(
         id='intersection-v1',
         entry_point='highway_env.envs:ContinuousIntersectionEnv',
+    )
+
+    register(
+        id='intersectionmpc-v1',
+        entry_point='highway_env.envs:ContinuousIntersectionEnvMpc',
     )
 
     register(
@@ -108,3 +119,4 @@ def register_highway_envs():
         id='u-turn-v0',
         entry_point='highway_env.envs:UTurnEnv'
     )
+
