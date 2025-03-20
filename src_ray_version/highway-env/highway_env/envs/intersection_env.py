@@ -166,7 +166,8 @@ class IntersectionEnv(AbstractEnv):
             is_horizontal = corner % 2
             priority = 3 if is_horizontal else 1
             rotation = np.array(
-                [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+                [[np.cos(angle), -np.sin(angle)],
+                 [np.sin(angle), np.cos(angle)]]
             )
             # Incoming
             start = rotation @ np.array(
@@ -177,7 +178,8 @@ class IntersectionEnv(AbstractEnv):
                 "o" + str(corner),
                 "ir" + str(corner),
                 StraightLane(
-                    start, end, line_types=[s, c], priority=priority, speed_limit=10
+                    start, end, line_types=[
+                        s, c], priority=priority, speed_limit=10
                 ),
             )
             # Right turn
@@ -225,7 +227,8 @@ class IntersectionEnv(AbstractEnv):
                 "ir" + str(corner),
                 "il" + str((corner + 2) % 4),
                 StraightLane(
-                    start, end, line_types=[s, n], priority=priority, speed_limit=10
+                    start, end, line_types=[
+                        s, n], priority=priority, speed_limit=10
                 ),
             )
             # Exit
@@ -237,7 +240,8 @@ class IntersectionEnv(AbstractEnv):
                 "il" + str((corner - 1) % 4),
                 "o" + str((corner - 1) % 4),
                 StraightLane(
-                    end, start, line_types=[n, c], priority=priority, speed_limit=10
+                    end, start, line_types=[
+                        n, c], priority=priority, speed_limit=10
                 ),
             )
 
@@ -255,7 +259,8 @@ class IntersectionEnv(AbstractEnv):
         :return: the ego-vehicle
         """
         # Configure vehicles
-        vehicle_type = utils.class_from_path(self.config["other_vehicles_type"])
+        vehicle_type = utils.class_from_path(
+            self.config["other_vehicles_type"])
         vehicle_type.DISTANCE_WANTED = 7  # Low jam distance
         vehicle_type.COMFORT_ACC_MAX = 6
         vehicle_type.COMFORT_ACC_MIN = -3
@@ -330,7 +335,8 @@ class IntersectionEnv(AbstractEnv):
 
         route = self.np_random.choice(range(4), size=2, replace=False)
         route[1] = (route[0] + 2) % 4 if go_straight else route[1]
-        vehicle_type = utils.class_from_path(self.config["other_vehicles_type"])
+        vehicle_type = utils.class_from_path(
+            self.config["other_vehicles_type"])
         vehicle = vehicle_type.make_on_lane(
             self.road,
             ("o" + str(route[0]), "ir" + str(route[0]), 0),

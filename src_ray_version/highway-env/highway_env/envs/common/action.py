@@ -191,7 +191,8 @@ class DiscreteAction(ContinuousAction):
 
     def act(self, action: int) -> None:
         cont_space = super().space()
-        axes = np.linspace(cont_space.low, cont_space.high, self.actions_per_axis).T
+        axes = np.linspace(cont_space.low, cont_space.high,
+                           self.actions_per_axis).T
         all_actions = list(itertools.product(*axes))
         super().act(all_actions[action])
 
@@ -201,7 +202,8 @@ class DiscreteMetaAction(ActionType):
     An discrete action space of meta-actions: lane changes, and cruise control set-point.
     """
 
-    ACTIONS_ALL = {0: "LANE_LEFT", 1: "IDLE", 2: "LANE_RIGHT", 3: "FASTER", 4: "SLOWER"}
+    ACTIONS_ALL = {0: "LANE_LEFT", 1: "IDLE",
+                   2: "LANE_RIGHT", 3: "FASTER", 4: "SLOWER"}
     """A mapping of action indexes to labels."""
 
     ACTIONS_LONGI = {0: "SLOWER", 1: "IDLE", 2: "FASTER"}
@@ -331,6 +333,42 @@ class MultiAgentAction(ActionType):
         )
 
 
+# MPCRL
+class ReferenceSpeedAction(ActionType):
+    def __init__(
+        self,
+        env: AbstractEnv,
+    ) -> None:
+        super().__init__(env)
+
+
+class DynamicWeightsAction(ActionType):
+
+    def __init__(
+        self,
+        env: AbstractEnv,
+        num_weights: int,
+        **kwargs,
+    ) -> None:
+        super().__init__(env)
+        self.num_weights = num_weights
+
+    def space(self) -> spaces.Space:
+        return spaces.Discrete(self.num_weights)
+
+    def act(self, action: Action) -> None:
+        action = {
+            "acceleration": action[0],
+            "steering": action[1],
+        }
+        self.controlled_vehicle.act(action)
+        self.last_action = action
+
+    @property
+    def vehicle_class(self) -> Callable:
+        return Vehicle  # if not self.dynamical else BicycleVehicle
+
+
 def action_factory(env: AbstractEnv, config: dict) -> ActionType:
     if config["type"] == "ContinuousAction":
         return ContinuousAction(env, **config)
@@ -340,5 +378,8 @@ def action_factory(env: AbstractEnv, config: dict) -> ActionType:
         return DiscreteMetaAction(env, **config)
     elif config["type"] == "MultiAgentAction":
         return MultiAgentAction(env, **config)
+    # MPCRL
+    elif config["type"] == "DynamicWeightsAction":
+        return DynamicWeightsAction(env, **config)
     else:
         raise ValueError("Unknown action type")

@@ -114,5 +114,11 @@ def _register_highway_envs():
     # u_turn_env.py
     register(id="u-turn-v0", entry_point="highway_env.envs.u_turn_env:UTurnEnv")
 
+    # intersection_mpc_env.py
+    register(
+        id="intersection-mpc-v0", 
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv",
+    )
+
 
 _register_highway_envs()
