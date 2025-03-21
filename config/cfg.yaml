@@ -121,6 +121,7 @@ pure_mpc_no_collision:
   weight_control: 1     # Weight for control effort
   weight_input_diff: 1  # Weight for smooth control changes
   weight_final_state: 1 # Weight for terminal state
+  weight_speed: 1
 
 # mpc_rl:
 

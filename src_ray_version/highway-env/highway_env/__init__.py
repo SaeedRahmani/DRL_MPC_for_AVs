@@ -115,10 +115,21 @@ def _register_highway_envs():
     register(id="u-turn-v0", entry_point="highway_env.envs.u_turn_env:UTurnEnv")
 
     # intersection_mpc_env.py
+    # PureMpc
     register(
-        id="intersection-mpc-v0", 
+        id="intersection-mpc-v0",
         entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv",
     )
+    # # Mpcrl-v0: reference speed
+    # register(
+    #     id="intersection-mpcrl-v0",
+    #     entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v0",
+    # )
+    # Mpcrl-v1: dynamic weights
+    # register(
+    #     id="intersection-mpcrl-v1",
+    #     entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v1",
+    # )
 
 
 _register_highway_envs()

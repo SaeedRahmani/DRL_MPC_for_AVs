@@ -1,4 +1,4 @@
-from typing import Dict, Text, Tuple
+from __future__ import annotations
 
 import numpy as np
 
@@ -11,7 +11,7 @@ from highway_env.vehicle.kinematics import Vehicle
 
 
 class IntersectionEnv(AbstractEnv):
-    ACTIONS: Dict[int, str] = {0: "SLOWER", 1: "IDLE", 2: "FASTER"}
+    ACTIONS: dict[int, str] = {0: "SLOWER", 1: "IDLE", 2: "FASTER"}
     ACTIONS_INDEXES = {v: k for k, v in ACTIONS.items()}
 
     @classmethod
@@ -39,7 +39,7 @@ class IntersectionEnv(AbstractEnv):
                     "lateral": False,
                     "target_speeds": [0, 4.5, 9],
                 },
-                "duration": 20,  # [s]
+                "duration": 13,  # [s]
                 "destination": "o1",
                 "controlled_vehicles": 1,
                 "initial_vehicle_count": 10,
@@ -48,11 +48,9 @@ class IntersectionEnv(AbstractEnv):
                 "screen_height": 600,
                 "centering_position": [0.5, 0.6],
                 "scaling": 5.5 * 1.3,
-                "collision_reward": -200,
-                "high_speed_reward": 15,
-                "arrived_reward": 50,
-                "on_road_reward": 2,
-                "off_road_penalty": -50,
+                "collision_reward": -5,
+                "high_speed_reward": 1,
+                "arrived_reward": 1,
                 "reward_speed_range": [7.0, 9.0],
                 "normalize_reward": False,
                 "offroad_terminal": False,
@@ -66,7 +64,7 @@ class IntersectionEnv(AbstractEnv):
             self._agent_reward(action, vehicle) for vehicle in self.controlled_vehicles
         ) / len(self.controlled_vehicles)
 
-    def _rewards(self, action: int) -> Dict[Text, float]:
+    def _rewards(self, action: int) -> dict[str, float]:
         """Multi-objective rewards, for cooperative agents."""
         agents_rewards = [
             self._agent_rewards(action, vehicle) for vehicle in self.controlled_vehicles
@@ -78,65 +76,31 @@ class IntersectionEnv(AbstractEnv):
         }
 
     def _agent_reward(self, action: int, vehicle: Vehicle) -> float:
-        """
-        Revised per-agent reward.
-        Encourages high speeds, arriving at the destination, and being near the lane center.
-        Heavily penalizes collisions and going off-road.
-        """
+        """Per-agent reward signal."""
         rewards = self._agent_rewards(action, vehicle)
-        
-        # Compute base reward from collision, high speed, and arrival.
-        # Note: rewards["collision_reward"] and rewards["arrived_reward"] are booleans.
-        base_reward = (
-            self.config.get("collision_reward", -100) * (1 if rewards["collision_reward"] else 0) +
-            self.config.get("high_speed_reward", 5) * rewards["high_speed_reward"] +
-            self.config.get("arrived_reward", 50) * (1 if rewards["arrived_reward"] else 0)
+        reward = sum(
+            self.config.get(name, 0) * reward for name, reward in rewards.items()
         )
-        
-        # Continuous lane centering bonus: if on the road, reward how close to center the vehicle is.
-        if vehicle.on_road:
-            # Get lateral deviation (assuming lane.local_coordinates returns [longitudinal, lateral]).
-            lateral = vehicle.lane.local_coordinates(vehicle.position)[1]
-            # Normalize deviation: if the lateral deviation equals half the lane width, the bonus is 0.
-            centering_factor = 1 - min(1, abs(lateral) / (vehicle.lane.width / 2))
-            # "center_bonus" weight can be tuned via config (default set here to 5).
-            center_reward = self.config.get("center_bonus", 5) * centering_factor
-        else:
-            center_reward = 0
-
-        # Off-road penalty: if the vehicle is off the road, apply a penalty.
-        off_road_penalty = 0 if vehicle.on_road else self.config.get("off_road_penalty", -50)
-        
-        total_reward = base_reward + center_reward + off_road_penalty
-
-        # Optional normalization of the reward into a [0, 1] range.
+        reward = self.config["arrived_reward"] if rewards["arrived_reward"] else reward
+        reward *= rewards["on_road_reward"]
         if self.config["normalize_reward"]:
-            # Define possible min and max values for normalization.
-            max_possible = self.config.get("high_speed_reward", 5) + self.config.get("arrived_reward", 50)
-            min_possible = min(self.config.get("collision_reward", -100), self.config.get("off_road_penalty", -50))
-            total_reward = utils.lmap(
-                total_reward,
-                [min_possible, max_possible],
+            reward = utils.lmap(
+                reward,
+                [self.config["collision_reward"], self.config["arrived_reward"]],
                 [0, 1],
             )
+        return reward
 
-        # print("reward: ", total_reward)
-        return total_reward
-
-
-    def _agent_rewards(self, action: int, vehicle: Vehicle) -> Dict[Text, float]:
+    def _agent_rewards(self, action: int, vehicle: Vehicle) -> dict[str, float]:
         """Per-agent per-objective reward signal."""
-        # scaled_speed = utils.lmap(
-        #     vehicle.speed, self.config["reward_speed_range"], [0, 1]
-        # )
-        scaled_speed = vehicle.speed / 10.0
+        scaled_speed = utils.lmap(
+            vehicle.speed, self.config["reward_speed_range"], [0, 1]
+        )
         return {
             "collision_reward": vehicle.crashed,
-            # "high_speed_reward": np.clip(scaled_speed, 0, 1),
-            "high_speed_reward": scaled_speed, # not only high speed
+            "high_speed_reward": np.clip(scaled_speed, 0, 1),
             "arrived_reward": self.has_arrived(vehicle),
             "on_road_reward": vehicle.on_road,
-            "off_road_penalty": 0.0 if vehicle.on_road else -1.0, 
         }
 
     def _is_terminated(self) -> bool:
@@ -152,14 +116,14 @@ class IntersectionEnv(AbstractEnv):
 
     def _is_truncated(self) -> bool:
         """The episode is truncated if the time limit is reached."""
-        return self.time >= self.config["duration"]+ 10
+        return self.time >= self.config["duration"]
 
     def _info(self, obs: np.ndarray, action: int) -> dict:
         info = super()._info(obs, action)
         info["agents_rewards"] = tuple(
             self._agent_reward(action, vehicle) for vehicle in self.controlled_vehicles
         )
-        info["agents_dones"] = tuple(
+        info["agents_terminated"] = tuple(
             self._agent_is_terminal(vehicle) for vehicle in self.controlled_vehicles
         )
         return info
@@ -168,7 +132,7 @@ class IntersectionEnv(AbstractEnv):
         self._make_road()
         self._make_vehicles(self.config["initial_vehicle_count"])
 
-    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, dict]:
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
         obs, reward, terminated, truncated, info = super().step(action)
         self._clear_vehicles()
         self._spawn_vehicle(spawn_probability=self.config["spawn_probability"])
@@ -202,7 +166,8 @@ class IntersectionEnv(AbstractEnv):
             is_horizontal = corner % 2
             priority = 3 if is_horizontal else 1
             rotation = np.array(
-                [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+                [[np.cos(angle), -np.sin(angle)],
+                 [np.sin(angle), np.cos(angle)]]
             )
             # Incoming
             start = rotation @ np.array(
@@ -213,7 +178,8 @@ class IntersectionEnv(AbstractEnv):
                 "o" + str(corner),
                 "ir" + str(corner),
                 StraightLane(
-                    start, end, line_types=[s, c], priority=priority, speed_limit=10
+                    start, end, line_types=[
+                        s, c], priority=priority, speed_limit=10
                 ),
             )
             # Right turn
@@ -261,7 +227,8 @@ class IntersectionEnv(AbstractEnv):
                 "ir" + str(corner),
                 "il" + str((corner + 2) % 4),
                 StraightLane(
-                    start, end, line_types=[s, n], priority=priority, speed_limit=10
+                    start, end, line_types=[
+                        s, n], priority=priority, speed_limit=10
                 ),
             )
             # Exit
@@ -273,7 +240,8 @@ class IntersectionEnv(AbstractEnv):
                 "il" + str((corner - 1) % 4),
                 "o" + str((corner - 1) % 4),
                 StraightLane(
-                    end, start, line_types=[n, c], priority=priority, speed_limit=10
+                    end, start, line_types=[
+                        n, c], priority=priority, speed_limit=10
                 ),
             )
 
@@ -283,81 +251,6 @@ class IntersectionEnv(AbstractEnv):
             record_history=self.config["show_trajectories"],
         )
         self.road = road
-    def _make_vehicles_editted(self, n_vehicles: int = 10) -> None:
-        """
-        Populate a road with vehicles at specific positions:
-        - 2 vehicles from west (left)
-        - 2 vehicles from east (right)
-        - 1 vehicle from north
-        """
-        # Configure vehicles
-        vehicle_type = utils.class_from_path(self.config["other_vehicles_type"])
-        vehicle_type.DISTANCE_WANTED = 7  # Low jam distance
-        vehicle_type.COMFORT_ACC_MAX = 6
-        vehicle_type.COMFORT_ACC_MIN = -3
-
-        # Create vehicles at specific positions
-        # Format: (start_position, route_start, route_end, longitudinal_pos, speed)
-        # route_start: 0=south, 1=west, 2=north, 3=east
-        specific_vehicles = [
-            # Two vehicles from west (1)
-            (0, 1, 3, 40, 8),  # First vehicle from west going straight
-            (0, 1, 3, 60, 8),  # Second vehicle from west going straight
-            
-            # Two vehicles from east (3)
-            (0, 3, 1, 40, 8),  # First vehicle from east going straight
-            (0, 3, 1, 60, 8),  # Second vehicle from east going straight
-            
-            # One vehicle from north (2)
-            (0, 2, 0, 50, 8),  # Vehicle from north going straight
-        ]
-
-        for spawn_time, route_start, route_end, longitudinal_pos, speed in specific_vehicles:
-            vehicle = vehicle_type.make_on_lane(
-                self.road,
-                ("o" + str(route_start), "ir" + str(route_start), 0),
-                longitudinal=longitudinal_pos,
-                speed=speed
-            )
-            vehicle.plan_route_to("o" + str(route_end))
-            vehicle.randomize_behavior()
-            self.road.vehicles.append(vehicle)
-
-        # Simulation steps to let vehicles get into position
-        simulation_steps = 3
-        for _ in range(simulation_steps):
-            [
-                (
-                    self.road.act(),
-                    self.road.step(1 / self.config["simulation_frequency"]),
-                )
-                for _ in range(self.config["simulation_frequency"])
-            ]
-
-        # Controlled vehicles (ego vehicle)
-        self.controlled_vehicles = []
-        for ego_id in range(0, self.config["controlled_vehicles"]):
-            ego_lane = self.road.network.get_lane(
-                ("o{}".format(ego_id % 4), "ir{}".format(ego_id % 4), 0)
-            )
-            destination = self.config["destination"] or "o" + str(
-                self.np_random.integers(1, 4)
-            )
-            ego_vehicle = self.action_type.vehicle_class(
-                self.road,
-                ego_lane.position(60, 0),  # Fixed position for ego vehicle
-                speed=ego_lane.speed_limit,
-                heading=ego_lane.heading_at(60),
-            )
-            try:
-                ego_vehicle.plan_route_to(destination)
-                ego_vehicle.speed_index = ego_vehicle.speed_to_index(ego_lane.speed_limit)
-                ego_vehicle.target_speed = ego_vehicle.index_to_speed(ego_vehicle.speed_index)
-            except AttributeError:
-                pass
-
-            self.road.vehicles.append(ego_vehicle)
-            self.controlled_vehicles.append(ego_vehicle)
 
     def _make_vehicles(self, n_vehicles: int = 10) -> None:
         """
@@ -366,7 +259,8 @@ class IntersectionEnv(AbstractEnv):
         :return: the ego-vehicle
         """
         # Configure vehicles
-        vehicle_type = utils.class_from_path(self.config["other_vehicles_type"])
+        vehicle_type = utils.class_from_path(
+            self.config["other_vehicles_type"])
         vehicle_type.DISTANCE_WANTED = 7  # Low jam distance
         vehicle_type.COMFORT_ACC_MAX = 6
         vehicle_type.COMFORT_ACC_MIN = -3
@@ -397,7 +291,7 @@ class IntersectionEnv(AbstractEnv):
         self.controlled_vehicles = []
         for ego_id in range(0, self.config["controlled_vehicles"]):
             ego_lane = self.road.network.get_lane(
-                ("o{}".format(ego_id % 4), "ir{}".format(ego_id % 4), 0)
+                (f"o{ego_id % 4}", f"ir{ego_id % 4}", 0)
             )
             destination = self.config["destination"] or "o" + str(
                 self.np_random.integers(1, 4)
@@ -441,7 +335,8 @@ class IntersectionEnv(AbstractEnv):
 
         route = self.np_random.choice(range(4), size=2, replace=False)
         route[1] = (route[0] + 2) % 4 if go_straight else route[1]
-        vehicle_type = utils.class_from_path(self.config["other_vehicles_type"])
+        vehicle_type = utils.class_from_path(
+            self.config["other_vehicles_type"])
         vehicle = vehicle_type.make_on_lane(
             self.road,
             ("o" + str(route[0]), "ir" + str(route[0]), 0),

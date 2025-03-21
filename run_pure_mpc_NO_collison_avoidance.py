@@ -16,7 +16,8 @@ def test_pure_mpc_agent(cfg):
 
     # env
     env = gym.make("intersection-v1", render_mode="rgb_array", config=gym_env_config)
-    
+    print(env.unwrapped.default_config())
+
     # agent
     mpc_agent = PureMPC_Agent(env, pure_mpc_agent_config)
 
@@ -43,8 +44,9 @@ def test_pure_mpc_agent(cfg):
         )
         
         # Print current state
-        print(f"Step {i}: Speed={observation[0,3]:.2f}, Ref={ref_speed:.2f}, "
-              f"Acceleration={action.acceleration:.2f}")
+        # print(f"Step {i}: Speed={observation[0,3]:.2f}, Ref={ref_speed:.2f}, "
+        #       f"Acceleration={action.acceleration:.2f}")
+        # print(action)
         
         # Take step in environment
         observation, reward, done, truncated, info = env.step(

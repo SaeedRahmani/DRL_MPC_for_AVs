@@ -334,39 +334,69 @@ class MultiAgentAction(ActionType):
 
 
 # MPCRL
-class ReferenceSpeedAction(ActionType):
+class PureMpcAction(ContinuousAction):
     def __init__(
         self,
         env: AbstractEnv,
+        acceleration_range: tuple[float, float] | None = None,
+        steering_range: tuple[float, float] | None = None,
+        speed_range: tuple[float, float] | None = None,
+        longitudinal: bool = True,
+        lateral: bool = True,
+        dynamical: bool = False,
+        clip: bool = True,
+        **kwargs,
     ) -> None:
-        super().__init__(env)
+        super().__init__(
+            env=env, 
+            acceleration_range=acceleration_range, 
+            steering_range=steering_range, 
+            speed_range=speed_range, 
+            longitudinal=longitudinal, 
+            lateral=lateral, 
+            dynamical=dynamical, 
+            clip=clip,
+        )
+
+    def space(self) -> spaces.Box:
+        return spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
+
+# class ReferenceSpeedAction(ActionType):
+#     def __init__(
+#         self,
+#         env: AbstractEnv,
+#     ) -> None:
+#         super().__init__(env)
 
 
-class DynamicWeightsAction(ActionType):
-
+class DynamicWeightsAction(PureMpcAction):
     def __init__(
         self,
         env: AbstractEnv,
         num_weights: int,
+        acceleration_range: tuple[float, float] | None = None,
+        steering_range: tuple[float, float] | None = None,
+        speed_range: tuple[float, float] | None = None,
+        longitudinal: bool = True,
+        lateral: bool = True,
+        dynamical: bool = False,
+        clip: bool = True,
         **kwargs,
     ) -> None:
-        super().__init__(env)
+        super().__init__( 
+            env=env, 
+            acceleration_range=acceleration_range, 
+            steering_range=steering_range, 
+            speed_range=speed_range, 
+            longitudinal=longitudinal, 
+            lateral=lateral, 
+            dynamical=dynamical, 
+            clip=clip,
+        )
         self.num_weights = num_weights
 
-    def space(self) -> spaces.Space:
-        return spaces.Discrete(self.num_weights)
-
-    def act(self, action: Action) -> None:
-        action = {
-            "acceleration": action[0],
-            "steering": action[1],
-        }
-        self.controlled_vehicle.act(action)
-        self.last_action = action
-
-    @property
-    def vehicle_class(self) -> Callable:
-        return Vehicle  # if not self.dynamical else BicycleVehicle
+    def space(self) -> spaces.Box:
+        return spaces.Box(-1.0, 1.0, shape=(self.num_weights,), dtype=np.float32)
 
 
 def action_factory(env: AbstractEnv, config: dict) -> ActionType:
@@ -379,6 +409,8 @@ def action_factory(env: AbstractEnv, config: dict) -> ActionType:
     elif config["type"] == "MultiAgentAction":
         return MultiAgentAction(env, **config)
     # MPCRL
+    elif config["type"] == "PureMpcAction":
+        return PureMpcAction(env, **config)
     elif config["type"] == "DynamicWeightsAction":
         return DynamicWeightsAction(env, **config)
     else:

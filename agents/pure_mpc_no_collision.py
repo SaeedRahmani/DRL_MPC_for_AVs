@@ -11,6 +11,7 @@ from .utils import MPC_Action, Vehicle
 
 class PureMPC_Agent(Agent):
     weight_components = [
+        "state",
         "speed", 
         "control", 
         # "distance", 
@@ -144,7 +145,7 @@ class PureMPC_Agent(Agent):
         )
 
         total_cost = (
-            # state_cost * weights["weight_state"] +
+            state_cost * weights["weight_state"] +
             control_cost * weights["weight_control"] +
             input_diff_cost * weights["weight_input_diff"] 
             # final_state_cost * weights["weight_final_state"]
@@ -227,7 +228,6 @@ class PureMPC_Agent(Agent):
             
         u_opt = sol['x'][-N * n_controls:].full().reshape(N, n_controls)
         self.last_acc = u_opt[0, 0]
-
         return MPC_Action(acceleration=u_opt[0, 0], steer=u_opt[0, 1])
     
     def plot(self):

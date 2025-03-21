@@ -17,7 +17,7 @@ from highway_env.envs.roundabout_env import RoundaboutEnv
 from highway_env.envs.two_way_env import TwoWayEnv
 from highway_env.envs.u_turn_env import UTurnEnv
 
-from highway_env.envs.intersection_mpc_env import IntersectionMpcEnv
+from highway_env.envs.intersection_mpc_env import IntersectionMpcEnv, IntersectionMpcrlEnv_v1
 
 
 __all__ = [
@@ -37,4 +37,6 @@ __all__ = [
     "TwoWayEnv",
     "UTurnEnv",
     "IntersectionMpcEnv",
+    # "IntersectionMpcrlEnv_v0",
+    "IntersectionMpcrlEnv_v1",
 ]

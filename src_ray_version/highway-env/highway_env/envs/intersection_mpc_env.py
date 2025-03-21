@@ -5,20 +5,24 @@ import casadi as ca
 
 from highway_env.envs import IntersectionEnv
 from highway_env.envs.common.action import (
-    Action, DynamicWeightsAction, ReferenceSpeedAction)
+    Action,
+    PureMpcAction,
+    DynamicWeightsAction
+)
 from highway_env.envs.common.abstract import Observation
-from utils.vehicle import Vehicle
+from src_ray_version.utils.vehicle import Vehicle
+# from utils.vehicle import Vehicle
 
 
 class IntersectionMpcEnv(IntersectionEnv):
     """ An intersection environment with MPC solver inside. """
-
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
         # MPC parameters
         self.horizon: int = 16
-        self.dt: float = 1 / self.config["policy_frequency"]
+        self.dt: float = 0.1 
         self.weight_components = [
+            "state",
             "speed",
             "control",
             # "distance",
@@ -26,6 +30,18 @@ class IntersectionMpcEnv(IntersectionEnv):
             "input_diff"
             # "final_state"
         ]
+        self.default_weights = {
+            "weight_speed": 1,
+            "weight_control": 1,
+            "weight_final_state": 1,
+            "weight_input_diff": 1,
+            "weight_distance": 10,
+            "weight_collision": 1,
+            "weight_state": 10,
+        }
+
+        self.reference_trajectory = self.reference_states[:, :2]
+        self.last_acc = 0
 
     @classmethod
     def default_config(cls) -> dict:
@@ -46,15 +62,28 @@ class IntersectionMpcEnv(IntersectionEnv):
                         "cos_h": [-1, 1],
                     },
                     "absolute": True,
-                    "flatten": False,
-                    "observe_intentions": False,
+                    "normalize": False,
+                    "order": "sorted",
                 },
                 "action": {
-                    "type": "DynamicWeightsAction",
-                    "num_weights": 5,
+                    "type": "PureMpcAction",
+                    "acceleration_range": [-5.0, 5.0],
+                    "steering_range": [-np.pi / 4, np.pi / 4],
                 },
+                # vehicle spawning
                 "vehicles_count": 10,
-                "horizon": 16
+                "initial_vehicle_count": 5,
+                "spawn_probability": 0.3,
+                # time
+                "duration": 200,            # [s]
+                "policy_frequency": 10,
+                "simulation_frequency": 30,
+                # rendering
+                "scaling": 3,
+                "screen_width": 600,
+                "screen_height": 600,
+                # MPC
+                "horizon": 16,                
             }
         )
         return config
@@ -84,6 +113,10 @@ class IntersectionMpcEnv(IntersectionEnv):
         self.update_metadata()
         # First, to set the controlled vehicle class depending on action space
         self.define_spaces()
+
+        self.time_index = 0
+        self.current_speed_idx = 0
+
         self.time = self.steps = 0
         self.done = False
         self._reset()
@@ -113,6 +146,7 @@ class IntersectionMpcEnv(IntersectionEnv):
 
         self.time += 1 / self.config["policy_frequency"]
         self._simulate(action)
+        self.time_index += 1
 
         obs = self.observation_type.observe()
         reward = self._reward(action)
@@ -133,7 +167,8 @@ class IntersectionMpcEnv(IntersectionEnv):
         )
 
         # MPCRL
-        self._predict_mpc_action(action)
+        mpc_action = self._predict_mpc_action(action)
+        # print(mpc_action)
 
         for frame in range(frames):
             # Forward action to the vehicle
@@ -148,7 +183,7 @@ class IntersectionMpcEnv(IntersectionEnv):
                 == 0
             ):
 
-                self.action_type.act(action)
+                self.action_type.act(mpc_action)
 
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
@@ -166,21 +201,40 @@ class IntersectionMpcEnv(IntersectionEnv):
     def _predict_mpc_action(self, action: Action) -> Action:
         """ Predict the action of ego vehicle using MPC. """
         self._prepare_obs()
-        if isinstance(self.action_type, DynamicWeightsAction):
-            weights = action
-            self._solve_mpc(weights=weights, ref_speed=None)
-        elif isinstance(self.action_type, ReferenceSpeedAction):
-            reference_speed = action
-            self._solve_mpc(weights=None, ref_speed=reference_speed)
+
+        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
+        steps_per_speed = 33  # Change speed every 33 steps
+        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
+            self.ref_speed = test_speeds[self.current_speed_idx]
+            self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
+
+        if action is None:
+            mpc_action = self._solve_mpc(weights=None, ref_speed=np.array([[self.ref_speed]]))
+        # elif isinstance(self.action_type, DynamicWeightsAction):
+        #     weights = action
+        #     mpc_action = self._solve_mpc(weights=weights, ref_speed=None)
+        # elif isinstance(self.action_type, ReferenceSpeedAction):
+        #     reference_speed = action
+        #     mpc_action = self._solve_mpc(weights=None, ref_speed=reference_speed)
         else:
             raise TypeError("Wrong self.action_type")
-        return None
+        return mpc_action
 
-    def _solve_mpc(self, weights: np.array, ref_speed: np.array):
-        """ Use Casadi to solve the MPC. """
-        assert (type(weights) == np.ndarray and ref_speed == None) or (
-            type(ref_speed) == np.ndarray and weights == None)
+    def _solve_mpc(
+        self,
+        weights: np.array,
+        ref_speed: np.array
+    ) -> np.ndarray:
+        """ 
+        Use Casadi to solve the MPC. 
 
+        @arguments:
+        - weights: the dynamics weights of each component recommanded by RL agent (v1).
+        - ref_speed: the reference speed recommended by RL agent (v0).
+
+        @return:
+        - mpc_action: np.ndarray with shape of (2,), consisted of acceleration and steering.
+        """
         # MPC parameters
         N = self.horizon
 
@@ -200,24 +254,22 @@ class IntersectionMpcEnv(IntersectionEnv):
         else:
             # Use dynamic weights from RL agent
             weights_dict = {
-                f"weight_{key}": weights[i]
+                f"{key}": weights[i]
                 for i, key in enumerate(self.weight_components)
             }
 
         # Get the index on the reference trajectory for ego vehicle
-        self.reference_trajectory = self.reference_states[:, :2]
         self.ego_index = np.argmin(
-            [np.linalg.norm(self.ego_vehicle.position - trajectory_point)
+            [np.linalg.norm(self.ego_vehicle.position - trajectory_point) 
              for trajectory_point in self.reference_trajectory]
         )
-
+        
         # Update reference speed from RL if provided
         ref = np.copy(self.reference_states)
         if ref_speed is not None:
-            # Clip between 0 and max speed
-            safe_speed = np.clip(ref_speed[0, 0], 0, 30.0)
+            safe_speed = np.clip(ref_speed[0,0], 0, 30.0)  # Clip between 0 and max speed
             ref[:, 2] = safe_speed
-
+        
         closest_index = self.ego_index
 
         # Define the cost function
@@ -233,13 +285,11 @@ class IntersectionMpcEnv(IntersectionEnv):
             dx = x[0, k] - ref[ref_traj_index, 0]
             dy = x[1, k] - ref[ref_traj_index, 1]
 
-            ref_v = ref[ref_traj_index, 2]
-            ref_heading = ref[ref_traj_index, 3]
-            perp_deviation = dx * \
-                ca.sin(ref_heading) - dy * ca.cos(ref_heading)
-            para_deviation = dx * \
-                ca.cos(ref_heading) + dy * ca.sin(ref_heading)
-
+            ref_v = ref[ref_traj_index,2]
+            ref_heading = ref[ref_traj_index,3]
+            perp_deviation = dx * ca.sin(ref_heading) - dy * ca.cos(ref_heading)
+            para_deviation = dx * ca.cos(ref_heading) + dy * ca.sin(ref_heading)
+ 
             # State cost
             state_cost += (
                 4 * perp_deviation**2 +
@@ -267,7 +317,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         )
 
         total_cost = (
-            # state_cost * weights_dict["weight_state"] +
+            state_cost * weights_dict["weight_state"] +
             control_cost * weights_dict["weight_control"] +
             input_diff_cost * weights_dict["weight_input_diff"]
             # final_state_cost * weights_dict["weight_final_state"]
@@ -302,12 +352,12 @@ class IntersectionMpcEnv(IntersectionEnv):
 
         # Initial condition constraint
         g.append(x[:, 0] - state)
-
+    
         # State-update constraints for the entire horizon
         for k in range(N):
             x_next = x[:, k] + vehicle_model(x[:, k], u[:, k]) * self.dt
             g.append(x[:, k + 1] - x_next)
-
+        
         # Flatten constraints
         g = ca.vertcat(*g)
 
@@ -321,7 +371,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         # Bounds on state and control variables
         lbx = []
         ubx = []
-
+        
         for _ in range(N + 1):
             lbx += [-500, -500, -ca.pi, 0]
             ubx += [500, 500, ca.pi, 30]
@@ -329,7 +379,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         for _ in range(N):
             lbx += [-5, -ca.pi / 3]
             ubx += [5, ca.pi / 3]
-
+        
         # Create and solve the optimization problem
         nlp = {
             'x': opt_variables,
@@ -338,24 +388,25 @@ class IntersectionMpcEnv(IntersectionEnv):
         }
 
         opts = {
-            'ipopt.print_level': 0,
+            'ipopt.print_level': 0, 
             'print_time': 0,
             'ipopt.max_iter': 1000,
             'ipopt.tol': 1e-6,
         }
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
-
+        
         sol = solver(x0=x0, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
-
+        
         if not solver.stats()['success']:
             print("WARNING: Optimization failed to find a solution")
-
+            
         u_opt = sol['x'][-N * n_controls:].full().reshape(N, n_controls)
         self.last_acc = u_opt[0, 0]
 
-        acceleration = u_opt[0, 0]
-        steering = u_opt[0, 1]
-        return np.array([acceleration, steering])
+        acceleration, steering = u_opt[0, 0], u_opt[0, 1]
+        # mpc_action = np.array([acceleration / 5, steering / (np.pi / 3)])
+        mpc_action = np.array([acceleration, steering])
+        return mpc_action
 
     def _prepare_obs(self):
         """
@@ -380,8 +431,8 @@ class IntersectionMpcEnv(IntersectionEnv):
             position=self.current_observation[0, 1:3],
             vectorized_speed=self.current_observation[0, 3:5],
             heading=self._normalize_angle(self.current_observation[0, 5]),
-            sinh=self.current_observation[0,
-                                          6], cosh=self.current_observation[0, 7],
+            sinh=self.current_observation[0,6], 
+            cosh=self.current_observation[0, 7],
         )
 
         # Agent vehicles
@@ -392,10 +443,9 @@ class IntersectionMpcEnv(IntersectionEnv):
                     index=i+1,
                     position=self.current_observation[i+1, 1:3],
                     vectorized_speed=self.current_observation[i+1, 3:5],
-                    heading=self._normalize_angle(
-                        self.current_observation[i+1, 5]),
-                    sinh=self.current_observation[0,
-                                                  6], cosh=self.current_observation[0, 7],
+                    heading=self._normalize_angle(self.current_observation[i+1, 5]),
+                    sinh=self.current_observation[0,6], 
+                    cosh=self.current_observation[0, 7],
                 ))
             assert len(self.agent_vehicles) == self.observed_vehicles_count
         self.agent_vehicles_mpc = copy.deepcopy(self.agent_vehicles)
@@ -454,3 +504,93 @@ class IntersectionMpcEnv(IntersectionEnv):
             trajectory.append((x, y, v, heading))
 
         return np.array(trajectory)
+
+
+# class IntersectionMpcrlEnv_v0(IntersectionMpcEnv):
+
+#     def __init__(self, config: dict = None, render_mode: str | None = None):
+#         super().__init__(config=config, render_mode=render_mode)
+
+#     @classmethod
+#     def default_config(cls) -> dict:
+#         config = super().default_config()
+#         config.update(
+#             {
+#                 "observation": {
+#                     "type": "Kinematics",
+#                     "vehicles_count": 10,
+#                     "features": ["presence", "x", "y", "vx", "vy", "heading", "sin_h", "cos_h"],
+#                     "features_range": {
+#                         "x": [-100, 100],
+#                         "y": [-100, 100],
+#                         "vx": [-20, 20],
+#                         "vy": [-20, 20],
+#                         "heading": [-1 * np.pi, np.pi],
+#                         "sin_h": [-1, 1],
+#                         "cos_h": [-1, 1],
+#                     },
+#                     "absolute": True,
+#                     "flatten": False,
+#                     "observe_intentions": False,
+#                 },
+#                 "action": {
+#                     "type": "ReferenceSpeedAction",
+#                 },
+#                 "vehicles_count": 10,
+#                 "horizon": 16
+#             }
+#         )
+#         return config
+
+#     def __str__(self) -> str:
+#         return f"<IntersectionMpcrlEnv-v0:Reference_speed instance>"
+
+#     def __repr__(self) -> str:
+#         return self.__str__()
+
+
+class IntersectionMpcrlEnv_v1(IntersectionMpcEnv):
+    """ 
+    MPCRL: Dynamic weights
+    """
+
+    def __init__(self, config: dict = None, render_mode: str | None = None):
+        super().__init__(config=config, render_mode=render_mode)
+
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "observation": {
+                    "type": "Kinematics",
+                    "vehicles_count": 10,
+                    "features": ["presence", "x", "y", "vx", "vy", "heading", "sin_h", "cos_h"],
+                    "features_range": {
+                        "x": [-100, 100],
+                        "y": [-100, 100],
+                        "vx": [-20, 20],
+                        "vy": [-20, 20],
+                        "heading": [-1 * np.pi, np.pi],
+                        "sin_h": [-1, 1],
+                        "cos_h": [-1, 1],
+                    },
+                    "absolute": True,
+                    "flatten": False,
+                    "observe_intentions": False,
+                },
+                "action": {
+                    "type": "DynamicWeightsAction",
+                    "num_weights": 3,
+                },
+                "vehicles_count": 10,
+                "horizon": 16
+            }
+        )
+        return config
+
+    def __str__(self) -> str:
+        return f"<IntersectionMpcrlEnv-v1:Dynamic_weights instance>"
+
+    def __repr__(self) -> str:
+        return self.__str__()
