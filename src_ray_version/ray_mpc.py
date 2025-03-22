@@ -15,17 +15,27 @@ register_env(name="intersection-mpc-v0", env_creator=env_creator)
 # Configure the algorithm.
 config = (
     PPOConfig()
+    .framework("torch")
     .environment("intersection-mpc-v0")
     .env_runners(
         num_env_runners=2,
         # Observations are discrete (ints) -> We need to flatten (one-hot) them.
         env_to_module_connector=lambda env: FlattenObservations(),
     )
+    .resources(num_gpus=1)
+    .training(
+        lr=1e-4,
+        train_batch_size_per_learner=128,
+        num_epochs=1,
+    )
     .evaluation(
         evaluation_num_env_runners=1,
         evaluation_interval=1)
+    .api_stack(
+        enable_rl_module_and_learner=False,
+        enable_env_runner_and_connector_v2=False
+    )
 )
-config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)
 
 # Build the algorithm.
 algo = config.build_algo()
