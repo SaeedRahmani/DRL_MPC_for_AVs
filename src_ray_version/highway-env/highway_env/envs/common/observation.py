@@ -512,19 +512,19 @@ class KinematicsGoalObservation(KinematicObservation):
                         -np.inf,
                         np.inf,
                         shape=obs["desired_goal"].shape,
-                        dtype=np.float64,
+                        dtype=np.float32,
                     ),
                     achieved_goal=spaces.Box(
                         -np.inf,
                         np.inf,
                         shape=obs["achieved_goal"].shape,
-                        dtype=np.float64,
+                        dtype=np.float32,
                     ),
                     observation=spaces.Box(
                         -np.inf,
                         np.inf,
                         shape=obs["observation"].shape,
-                        dtype=np.float64,
+                        dtype=np.float32,
                     ),
                 )
             )
@@ -570,7 +570,7 @@ class AttributesObservation(ObservationType):
             return spaces.Dict(
                 {
                     attribute: spaces.Box(
-                        -np.inf, np.inf, shape=obs[attribute].shape, dtype=np.float64
+                        -np.inf, np.inf, shape=obs[attribute].shape, dtype=np.float32
                     )
                     for attribute in self.attributes
                 }

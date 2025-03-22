@@ -13,7 +13,7 @@ def test_pure_mpc_agent(cfg):
     # config
     gym_env_config = build_env_config(cfg)
     pure_mpc_agent_config = build_pure_mpc_agent_config(cfg, use_collision_avoidance=False)
-
+    
     # env
     env = gym.make("intersection-v1", render_mode="rgb_array", config=gym_env_config)
     print(env.unwrapped.default_config())

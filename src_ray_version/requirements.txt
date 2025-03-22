@@ -11,6 +11,7 @@ gymnasium==1.0.0
 ./highway-env
 stable-baselines3==2.5.0 
 ray[rllib]==2.43.0
+gputil
 
 # MPC solver
 casadi==3.6.7

@@ -10,8 +10,8 @@ from highway_env.envs.common.action import (
     DynamicWeightsAction
 )
 from highway_env.envs.common.abstract import Observation
-from src_ray_version.utils.vehicle import Vehicle
-# from utils.vehicle import Vehicle
+# from src_ray_version.utils.vehicle import Vehicle
+from utils.vehicle import Vehicle
 
 
 class IntersectionMpcEnv(IntersectionEnv):
@@ -208,16 +208,7 @@ class IntersectionMpcEnv(IntersectionEnv):
             self.ref_speed = test_speeds[self.current_speed_idx]
             self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
 
-        if action is None:
-            mpc_action = self._solve_mpc(weights=None, ref_speed=np.array([[self.ref_speed]]))
-        # elif isinstance(self.action_type, DynamicWeightsAction):
-        #     weights = action
-        #     mpc_action = self._solve_mpc(weights=weights, ref_speed=None)
-        # elif isinstance(self.action_type, ReferenceSpeedAction):
-        #     reference_speed = action
-        #     mpc_action = self._solve_mpc(weights=None, ref_speed=reference_speed)
-        else:
-            raise TypeError("Wrong self.action_type")
+        mpc_action = self._solve_mpc(weights=None, ref_speed=np.array([[self.ref_speed]]))
         return mpc_action
 
     def _solve_mpc(
@@ -266,6 +257,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         
         # Update reference speed from RL if provided
         ref = np.copy(self.reference_states)
+
         if ref_speed is not None:
             safe_speed = np.clip(ref_speed[0,0], 0, 30.0)  # Clip between 0 and max speed
             ref[:, 2] = safe_speed
