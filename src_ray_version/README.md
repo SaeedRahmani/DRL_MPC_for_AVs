@@ -8,3 +8,7 @@
 - [ ] Use `Ray` to distribute the environments?
 - [ ] Make it turn
 - [ ] The config is not loaded in the old version
+
+# Install locally
+1. pip install -r requirements.txt
+2. go to folder highway-env --> pip install -e .
