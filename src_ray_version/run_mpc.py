@@ -1,28 +1,36 @@
 import numpy as np
 import gymnasium
 import highway_env
-
 from pprint import pprint
 
 np.set_printoptions(suppress=True)
 
 if __name__ == "__main__":
-
-    # env = gymnasium.make("intersection-mpcrl-v0", render_mode="rgb_array")
-    # env = gymnasium.make("intersection-mpcrl-v1", render_mode="rgb_array")
-
+    # Create the MPC environment
     env = gymnasium.make("intersection-mpc-v0", render_mode="rgb_array")
-    # print(env, env.observation_space.shape, env.action_space.shape)
-    pprint(env.unwrapped.default_config())
-
-    obs: np.ndarray
-    obs, _ = env.reset()
-
+    
+    # Print environment information for debugging
+    # print(f"Environment: {env}")
+    # print(f"Observation space: {env.observation_space}")
+    # print(f"Action space: {env.action_space}")
+    
+    # Reset the environment
+    obs, info = env.reset()
+    
+    # Run simulation
     for i in range(200):
-        # action = np.random.random(env.action_space.n)  # agent predicts
-        obs, reward, terminated, truncated, info = env.step(action=None)
+        # For MPC environments, we pass an empty a dummy action. but
+        # The MPC controller inside the environment will generate the actual control (inside _simulate)
+        action = env.action_space.sample()  # Sample a valid action from the action space to start the simulation
+        
+        obs, reward, terminated, truncated, info = env.step(action)
         env.render()
-        if terminated:
+        
+        # Checking the reward
+        # print(f"Step {i}, Reward: {reward}")
+        
+        if terminated or truncated:
+            # print("Episode finished")
             break
 
     env.close()
