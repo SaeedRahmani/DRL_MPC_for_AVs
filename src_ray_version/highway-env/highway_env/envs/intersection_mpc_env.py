@@ -339,7 +339,15 @@ class IntersectionMpcEnv(IntersectionEnv):
         ])
 
         x0_states = np.tile(state, (N + 1, 1)).flatten()
-        u0_controls = np.zeros(n_controls * N)
+        # u0_controls = np.zeros(n_controls * N)    
+        # Instead of zeros, use previous solution as initial guess
+       # Warm start the controls if available
+        if hasattr(self, 'prev_solution') and self.prev_solution is not None:
+            # Shift previous solution (drop first control, repeat last)
+            u0_controls = np.vstack([self.prev_solution[1:], self.prev_solution[-1]]).flatten()
+        else:
+            # Initialize with zeros if no previous solution
+            u0_controls = np.zeros(n_controls * N)
         x0 = np.concatenate((x0_states, u0_controls))
 
         # Initial condition constraint
@@ -394,6 +402,7 @@ class IntersectionMpcEnv(IntersectionEnv):
             
         u_opt = sol['x'][-N * n_controls:].full().reshape(N, n_controls)
         self.last_acc = u_opt[0, 0]
+        self.prev_solution = u_opt
 
         acceleration, steering = u_opt[0, 0], u_opt[0, 1]
         # mpc_action = np.array([acceleration / 5, steering / (np.pi / 3)])

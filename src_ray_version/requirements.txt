@@ -8,7 +8,7 @@ shapely==2.0.7
 # RL
 gymnasium==1.0.0
 # highway-env==1.10.1
-./highway-env
+# ./highway-env NOTE: this actually did not work. go to highway-env folder and run pip install -e .
 stable-baselines3==2.5.0 
 ray[rllib]==2.43.0
 gputil
