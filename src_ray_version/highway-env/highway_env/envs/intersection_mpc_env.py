@@ -145,14 +145,14 @@ class IntersectionMpcEnv(IntersectionEnv):
             )
 
         self.time += 1 / self.config["policy_frequency"]
-        self._simulate(action)
+        mpc_action = self._simulate(action)
         self.time_index += 1
 
         obs = self.observation_type.observe()
-        reward = self._reward(action)
+        reward = self._reward(mpc_action)
         terminated = self._is_terminated()
         truncated = self._is_truncated()
-        info = self._info(obs, action)
+        info = self._info(obs, mpc_action)
         if self.render_mode == "human":
             self.render()
 

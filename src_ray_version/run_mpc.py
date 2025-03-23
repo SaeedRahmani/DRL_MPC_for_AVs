@@ -23,7 +23,7 @@ if __name__ == "__main__":
         # The MPC controller inside the environment will generate the actual control (inside _simulate)
         action = env.action_space.sample()  # Sample a valid action from the action space to start the simulation
         
-        obs, reward, terminated, truncated, info = env.step(action)
+        obs, reward, terminated, truncated, info = env.step(action=action)
         env.render()
         
         # Checking the reward
