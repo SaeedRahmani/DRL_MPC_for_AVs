@@ -1,5 +1,6 @@
 # output
 outputs/
+src_ray_version/outputs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
