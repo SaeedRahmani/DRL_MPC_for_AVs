@@ -1,31 +1,31 @@
 import gymnasium
-from highway_env.envs import IntersectionMpcEnv
+from highway_env.envs import IntersectionMpcrlEnv_v1
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.connectors.env_to_module import FlattenObservations
 from ray.tune.registry import register_env
 from pprint import pprint
 
+env_name = "intersection-mpcrl-dynamicweights-v0" # "intersection-mpcrl-refspeed-v0"
 
 def env_creator(config):
     # return gymnasium.make("intersection-mpc-v0", render_mode="rgb_array")
-    return IntersectionMpcEnv()
+    return IntersectionMpcrlEnv_v1()
 
-register_env(name="intersection-mpc-v0", env_creator=env_creator)
+register_env(name=env_name, env_creator=env_creator)
 
 # Configure the algorithm.
 config = (
     PPOConfig()
     .framework("torch")
-    .environment("intersection-mpc-v0")
+    .environment(env_name)
     .env_runners(
-        num_env_runners=2,
-        # Observations are discrete (ints) -> We need to flatten (one-hot) them.
-        env_to_module_connector=lambda env: FlattenObservations(),
+        num_env_runners=1,
+        # env_to_module_connector=lambda env: FlattenObservations(), # NOTE: do we need it? Seems not.
     )
     .resources(num_gpus=1)
     .training(
         lr=1e-4,
-        train_batch_size_per_learner=128,
+        train_batch_size_per_learner=64,
         num_epochs=1,
     )
     .evaluation(

@@ -120,16 +120,16 @@ def _register_highway_envs():
         id="intersection-mpc-v0",
         entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv",
     )
-    # # Mpcrl-v0: reference speed
-    # register(
-    #     id="intersection-mpcrl-v0",
-    #     entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v0",
-    # )
+    # Mpcrl-v0: reference speed
+    register(
+        id="intersection-mpcrl-refspeed-v0",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v0",
+    )
     # Mpcrl-v1: dynamic weights
-    # register(
-    #     id="intersection-mpcrl-v1",
-    #     entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v1",
-    # )
+    register(
+        id="intersection-mpcrl-dynamicweights-v0",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v1",
+    )
 
 
 _register_highway_envs()

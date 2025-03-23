@@ -7,7 +7,8 @@ from highway_env.envs import IntersectionEnv
 from highway_env.envs.common.action import (
     Action,
     PureMpcAction,
-    DynamicWeightsAction
+    DynamicWeightsAction,
+    ReferenceSpeedAction,
 )
 from highway_env.envs.common.abstract import Observation
 # from src_ray_version.utils.vehicle import Vehicle
@@ -245,7 +246,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         else:
             # Use dynamic weights from RL agent
             weights_dict = {
-                f"{key}": weights[i]
+                f"weight_{key}": weights[i]
                 for i, key in enumerate(self.weight_components)
             }
 
@@ -507,47 +508,43 @@ class IntersectionMpcEnv(IntersectionEnv):
         return np.array(trajectory)
 
 
-# class IntersectionMpcrlEnv_v0(IntersectionMpcEnv):
+class IntersectionMpcrlEnv_v0(IntersectionMpcEnv):
 
-#     def __init__(self, config: dict = None, render_mode: str | None = None):
-#         super().__init__(config=config, render_mode=render_mode)
+    def __init__(self, config: dict = None, render_mode: str | None = None):
+        super().__init__(config=config, render_mode=render_mode)
 
-#     @classmethod
-#     def default_config(cls) -> dict:
-#         config = super().default_config()
-#         config.update(
-#             {
-#                 "observation": {
-#                     "type": "Kinematics",
-#                     "vehicles_count": 10,
-#                     "features": ["presence", "x", "y", "vx", "vy", "heading", "sin_h", "cos_h"],
-#                     "features_range": {
-#                         "x": [-100, 100],
-#                         "y": [-100, 100],
-#                         "vx": [-20, 20],
-#                         "vy": [-20, 20],
-#                         "heading": [-1 * np.pi, np.pi],
-#                         "sin_h": [-1, 1],
-#                         "cos_h": [-1, 1],
-#                     },
-#                     "absolute": True,
-#                     "flatten": False,
-#                     "observe_intentions": False,
-#                 },
-#                 "action": {
-#                     "type": "ReferenceSpeedAction",
-#                 },
-#                 "vehicles_count": 10,
-#                 "horizon": 16
-#             }
-#         )
-#         return config
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "action": {
+                    "type": "ReferenceSpeedAction",
+                },             
+            }
+        )
+        return config
 
-#     def __str__(self) -> str:
-#         return f"<IntersectionMpcrlEnv-v0:Reference_speed instance>"
+    def __str__(self) -> str:
+        return f"<IntersectionMpcrlEnv-v0:Reference_speed instance>"
 
-#     def __repr__(self) -> str:
-#         return self.__str__()
+    def __repr__(self) -> str:
+        return self.__str__()
+
+    def _predict_mpc_action(self, action: Action) -> Action:
+        """ Predict the action of ego vehicle using MPC. """
+        self._prepare_obs()
+
+        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
+        steps_per_speed = 33  # Change speed every 33 steps
+        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
+            self.ref_speed = test_speeds[self.current_speed_idx]
+            self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
+
+        # the dynamic weights are used from RL agent.
+        ref_speed = action
+        mpc_action = self._solve_mpc(weights=None, ref_speed=ref_speed)
+        return mpc_action   
 
 
 class IntersectionMpcrlEnv_v1(IntersectionMpcEnv):
@@ -563,29 +560,10 @@ class IntersectionMpcrlEnv_v1(IntersectionMpcEnv):
         config = super().default_config()
         config.update(
             {
-                "observation": {
-                    "type": "Kinematics",
-                    "vehicles_count": 10,
-                    "features": ["presence", "x", "y", "vx", "vy", "heading", "sin_h", "cos_h"],
-                    "features_range": {
-                        "x": [-100, 100],
-                        "y": [-100, 100],
-                        "vx": [-20, 20],
-                        "vy": [-20, 20],
-                        "heading": [-1 * np.pi, np.pi],
-                        "sin_h": [-1, 1],
-                        "cos_h": [-1, 1],
-                    },
-                    "absolute": True,
-                    "flatten": False,
-                    "observe_intentions": False,
-                },
                 "action": {
                     "type": "DynamicWeightsAction",
-                    "num_weights": 3,
+                    "num_weights": 4,
                 },
-                "vehicles_count": 10,
-                "horizon": 16
             }
         )
         return config
@@ -595,3 +573,18 @@ class IntersectionMpcrlEnv_v1(IntersectionMpcEnv):
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    def _predict_mpc_action(self, action: Action) -> Action:
+        """ Predict the action of ego vehicle using MPC. """
+        self._prepare_obs()
+
+        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
+        steps_per_speed = 33  # Change speed every 33 steps
+        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
+            self.ref_speed = test_speeds[self.current_speed_idx]
+            self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
+
+        # the dynamic weights are used from RL agent.
+        weights = action
+        mpc_action = self._solve_mpc(weights=weights, ref_speed=np.array([[self.ref_speed]]))
+        return mpc_action   

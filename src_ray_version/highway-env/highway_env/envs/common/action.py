@@ -361,13 +361,32 @@ class PureMpcAction(ContinuousAction):
     def space(self) -> spaces.Box:
         return spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
 
-# class ReferenceSpeedAction(ActionType):
-#     def __init__(
-#         self,
-#         env: AbstractEnv,
-#     ) -> None:
-#         super().__init__(env)
+class ReferenceSpeedAction(PureMpcAction):
+    def __init__(
+        self,
+        env: AbstractEnv,
+        acceleration_range: tuple[float, float] | None = None,
+        steering_range: tuple[float, float] | None = None,
+        speed_range: tuple[float, float] | None = None,
+        longitudinal: bool = True,
+        lateral: bool = True,
+        dynamical: bool = False,
+        clip: bool = True,
+        **kwargs,
+    ) -> None:
+        super().__init__( 
+            env=env, 
+            acceleration_range=acceleration_range, 
+            steering_range=steering_range, 
+            speed_range=speed_range, 
+            longitudinal=longitudinal, 
+            lateral=lateral, 
+            dynamical=dynamical, 
+            clip=clip,
+        )
 
+    def space(self) -> spaces.Box:
+        return spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
 
 class DynamicWeightsAction(PureMpcAction):
     def __init__(
@@ -408,10 +427,14 @@ def action_factory(env: AbstractEnv, config: dict) -> ActionType:
         return DiscreteMetaAction(env, **config)
     elif config["type"] == "MultiAgentAction":
         return MultiAgentAction(env, **config)
+    
     # MPCRL
     elif config["type"] == "PureMpcAction":
         return PureMpcAction(env, **config)
+    elif config["type"] == "ReferenceSpeedAction":
+        return ReferenceSpeedAction(env, **config)
     elif config["type"] == "DynamicWeightsAction":
         return DynamicWeightsAction(env, **config)
+    
     else:
         raise ValueError("Unknown action type")
