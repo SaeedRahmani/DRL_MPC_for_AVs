@@ -1,48 +1,135 @@
+import ray
+import hydra
 import gymnasium
-from highway_env.envs import IntersectionMpcrlEnv_v1
-from ray.rllib.algorithms.ppo import PPOConfig
-from ray.rllib.connectors.env_to_module import FlattenObservations
+from gymnasium.envs.registration import VectorizeMode
+from highway_env.envs import IntersectionMpcrlEnv_v0, IntersectionMpcrlEnv_v1
+from omegaconf import DictConfig, OmegaConf
 from ray.tune.registry import register_env
-from pprint import pprint
+from ray.rllib.algorithms.ppo import PPOConfig
+from ray.rllib.algorithms.sac import SACConfig
 
-env_name = "intersection-mpcrl-dynamicweights-v0" # "intersection-mpcrl-refspeed-v0"
 
-def env_creator(config):
-    # return gymnasium.make("intersection-mpc-v0", render_mode="rgb_array")
-    return IntersectionMpcrlEnv_v1()
+ALGO_CONFIG_MAPPING = {
+    "ppo": PPOConfig,
+    "sac": SACConfig,
+}
 
-register_env(name=env_name, env_creator=env_creator)
 
-# Configure the algorithm.
-config = (
-    PPOConfig()
-    .framework("torch")
-    .environment(env_name)
-    .env_runners(
-        num_env_runners=1,
-        # env_to_module_connector=lambda env: FlattenObservations(), # NOTE: do we need it? Seems not.
+@hydra.main(version_base=None, config_path=".", config_name="config")
+def train_mpcrl_agent(cfg: DictConfig):
+    print(OmegaConf.to_yaml(cfg))
+    
+    ray.init(
+        num_cpus=22,  
+        num_gpus=1,
+        include_dashboard=True,
     )
-    .resources(num_gpus=1)
-    .training(
-        lr=1e-4,
-        train_batch_size_per_learner=64,
-        num_epochs=1,
+    print(ray.available_resources())
+
+    framework: str = cfg.rllib.framework # torch
+    use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
+    env_version: str = cfg.env.version
+    env_name: str = "intersection-mpcrl-dynamicweights-v0" \
+                    if env_version == "v1" else "intersection-mpcrl-refspeed-v0"
+                     
+    algo_name: str = cfg.agent.version
+    algo_parameters = cfg.agent[algo_name]
+    algo_config_class = ALGO_CONFIG_MAPPING[algo_name]
+              
+    def env_creator(config):
+        return IntersectionMpcrlEnv_v1(config=config, render_mode="rgb_array") \
+                    if env_version == "v1" else IntersectionMpcrlEnv_v0(config=config, render_mode="rgb_array")
+                    
+    register_env(
+        name=env_name,
+        env_creator=env_creator,
     )
-    .evaluation(
-        evaluation_num_env_runners=1,
-        evaluation_interval=1)
-    .api_stack(
-        enable_rl_module_and_learner=False,
-        enable_env_runner_and_connector_v2=False
+
+    config = (
+        algo_config_class()
+        .api_stack(
+            enable_rl_module_and_learner=use_rllib_new_API_stack,
+            enable_env_runner_and_connector_v2=use_rllib_new_API_stack,
+        )
+        .framework(framework)
+        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
+        # environment.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.environment
+        .environment(
+            env=env_name,
+            render_env=False, # FIXME: enable visualization later for debugging
+            is_atari=False,
+            disable_env_checking=True,
+        )
+        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
+        # env_runners.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.env_runners
+        .env_runners(
+            num_env_runners=cfg.rllib.num_env_runners,
+            num_cpus_per_env_runner=cfg.rllib.num_cpus_per_env_runner,
+            num_gpus_per_env_runner=1 / cfg.rllib.num_env_runners,
+            gym_env_vectorize_mode=VectorizeMode.ASYNC, 
+            # Set this to ASYNC to parallelize the individual sub environments within the vector. 
+            # This can speed up your EnvRunners significantly when using heavier environments.
+        )
+        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
+        # resources.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.resources
+        .resources(
+            num_gpus=cfg.rllib.num_gpus,
+        )
+        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
+        # training.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.training
+        .training(
+            gamma=cfg.agent.gamma,
+            lr=cfg.agent.lr,
+            num_epochs=cfg.agent.num_epochs,
+            train_batch_size=cfg.agent.train_batch_size,
+            minibatch_size=cfg.agent.minibatch_size,
+            shuffle_batch_per_epoch=cfg.agent.shuffle_batch_per_epoch,
+            model={
+                "fcnet_hiddens": [512, 256],
+            },
+        )
+        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
+        # evaluation.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.evaluation
+        .evaluation(
+            evaluation_num_env_runners=cfg.agent.evaluation_num_env_runners,
+            evaluation_interval=cfg.agent.evaluation_interval
+        )
+        .callbacks(
+            
+        )
     )
-)
+    
+    if algo_name == "ppo":
+        config.training(
+            # use_critic=algo_parameters.use_critic,
+            # use_gae=algo_parameters.use_gae,
+            lambda_=algo_parameters.lambda_,
+            use_kl_loss=algo_parameters.use_kl_loss,
+            kl_coeff=algo_parameters.kl_coeff,
+            kl_target=algo_parameters.kl_target,
+        )
+    elif algo_name == "sac":
+        config.training(
+            # target_network_update_freq=algo_parameters.target_network_update_freq,
+            replay_buffer_config={
+                "_enable_replay_buffer_api": True, 
+                "type": "MultiAgentReplayBuffer", 
+                "capacity": 50000, 
+                "replay_sequence_length": 1,
+                # "MultiAgentPrioritizedReplayBuffer"
+                # "prioritized_replay_alpha": 0.6, 
+                # "prioritized_replay_beta": 0.4, 
+                # "prioritized_replay_eps": 1e-6,
+            },
+            # tau=algo_parameters.tau,
+        )
+    else:
+        raise ValueError("Using unexpected algorithm name")
+    
+    
+    algo = config.build_algo()
+    
+    algo.train()
 
-# Build the algorithm.
-algo = config.build_algo()
-algo.train()
-
-# ... and evaluate it.
-pprint(algo.evaluate())
-
-# Release the algo's resources (remote actors, like EnvRunners and Learners).
-algo.stop()
+if __name__ == "__main__":
+    train_mpcrl_agent()
