@@ -7,6 +7,7 @@ from omegaconf import DictConfig, OmegaConf
 from ray.tune.registry import register_env
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.sac import SACConfig
+from pprint import pp
 
 
 ALGO_CONFIG_MAPPING = {
@@ -129,7 +130,9 @@ def train_mpcrl_agent(cfg: DictConfig):
     
     algo = config.build_algo()
     
-    algo.train()
+    for i in range(1):
+        results = algo.train()
+        pp(results)
 
 if __name__ == "__main__":
     train_mpcrl_agent()

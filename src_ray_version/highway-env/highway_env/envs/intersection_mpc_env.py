@@ -27,7 +27,7 @@ class IntersectionMpcEnv(IntersectionEnv):
             "speed",
             "control",
             # "distance",
-            # "collision",
+            # "collision", # new added
             "input_diff"
             # "final_state"
         ]
@@ -36,7 +36,7 @@ class IntersectionMpcEnv(IntersectionEnv):
             "weight_control": 1,
             "weight_final_state": 1,
             "weight_input_diff": 1,
-            "weight_distance": 10,
+            # "weight_distance": 10,
             "weight_collision": 1,
             "weight_state": 10,
         }
@@ -519,7 +519,7 @@ class IntersectionMpcrlEnv_v0(IntersectionMpcEnv):
         config.update(
             {
                 "action": {
-                    "type": "ReferenceSpeedAction",
+                    "type": "ReferenceSpeedAction", # use 6 to predict 30, optimal: 16
                 },             
             }
         )
