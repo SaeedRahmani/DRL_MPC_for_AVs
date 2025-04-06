@@ -34,14 +34,15 @@ agent:
   # https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#sac
   sac:
     target_network_update_freq: 32
-mpc:
-  version: "v1"
-  ttc_threshold: 3        # 3 seconds 
-  detection_distance: 100 # 100 meters
-
 env:
   version: "v1"
   v0:
     action_dim: 1
   v1:
     action_dim: 5
+
+mpc:
+  env_version: "v0"
+  ttc_threshold: 3        # 3 seconds 
+  detection_distance: 100 # 100 meters
+

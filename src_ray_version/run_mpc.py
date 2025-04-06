@@ -14,7 +14,7 @@ def run_mpc_agent(cfg: DictConfig):
 
     # Create the MPC environment
     env = gymnasium.make(
-        f"intersection-mpc-{mpc_config.version}", render_mode="rgb_array")
+        f"intersection-mpc-{mpc_config.env_version}", render_mode="rgb_array")
     print(f"ENV: {env.unwrapped}")
 
     _, _ = env.reset()
