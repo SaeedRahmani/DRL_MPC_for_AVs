@@ -22,9 +22,13 @@ from highway_env.envs.intersection_mpc_env import (
     IntersectionMpcEnv_v1,  # With manual external collision avoidance
     )
 from highway_env.envs.intersection_mpcrl_speeds_env import (
-    IntersectionMpcrlSpeedsEnv_v0)
+    IntersectionMpcrlSpeedsEnv_v0,  # No collision avoidance
+    IntersectionMpcrlSpeedsEnv_v1,  # With manual external collision avoidance
+    )
 from highway_env.envs.intersection_mpcrl_weights_env import (
-    IntersectionMpcrlWeightsEnv_v0)
+    IntersectionMpcrlWeightsEnv_v0, # No collision avoidance
+    IntersectionMpcrlWeightsEnv_v1, # With manual external collision avoidance
+    )
 
 
 __all__ = [
@@ -44,10 +48,12 @@ __all__ = [
     "TwoWayEnv",
     "UTurnEnv",
     # ---------- PureMpc ---------- #
-    "IntersectionMpcEnv_v0",    # No collision avoidance
-    "IntersectionMpcEnv_v1",    # With manual external collision avoidance
+    "IntersectionMpcEnv_v0",            # No collision avoidance
+    "IntersectionMpcEnv_v1",            # With manual external collision avoidance
     # ---------- MPCRL: Reference speeds ---------- #
     "IntersectionMpcrlSpeedsEnv_v0",    # No collision avoidance
+    "IntersectionMpcrlSpeedsEnv_v1",    # With manual external collision avoidance
     # ---------- MPCRL: Dynamic weights ----------- #
     "IntersectionMpcrlWeightsEnv_v0",   # No collision avoidance
+    "IntersectionMpcrlWeightsEnv_v1",   # With manual external collision avoidance
 ]

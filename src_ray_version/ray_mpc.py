@@ -2,7 +2,12 @@ import ray
 import hydra
 import gymnasium
 from gymnasium.envs.registration import VectorizeMode
-from highway_env.envs import IntersectionMpcrlEnv_v0, IntersectionMpcrlEnv_v1
+from highway_env.envs import (
+    IntersectionMpcrlWeightsEnv_v0, 
+    IntersectionMpcrlWeightsEnv_v1,
+    IntersectionMpcrlSpeedsEnv_v0,
+    IntersectionMpcrlSpeedsEnv_v1,
+    )
 from omegaconf import DictConfig, OmegaConf
 from ray.tune.registry import register_env
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -14,7 +19,12 @@ ALGO_CONFIG_MAPPING = {
     "ppo": PPOConfig,
     "sac": SACConfig,
 }
-
+ENV_CLASS_MAPPING = {
+    "intersection-mpcrl-dynamicweights-v0": IntersectionMpcrlWeightsEnv_v0,
+    "intersection-mpcrl-dynamicweights-v1": IntersectionMpcrlWeightsEnv_v1,
+    "intersection-mpcrl-refspeed-v0": IntersectionMpcrlSpeedsEnv_v0,
+    "intersection-mpcrl-refspeed-v1": IntersectionMpcrlSpeedsEnv_v1,
+}
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def train_mpcrl_agent(cfg: DictConfig):
@@ -23,28 +33,32 @@ def train_mpcrl_agent(cfg: DictConfig):
     ray.init(
         num_cpus=22,  
         num_gpus=1,
-        include_dashboard=True,
+        # include_dashboard=True,
     )
     print(ray.available_resources())
 
     framework: str = cfg.rllib.framework # torch
     use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
-    env_version: str = cfg.env.version
-    env_name: str = "intersection-mpcrl-dynamicweights-v0" \
-                    if env_version == "v1" else "intersection-mpcrl-refspeed-v0"
+    env_version: str = cfg.env.env_version
+    subenv_version: str = cfg.env.subenv_version
+    env_class_name: str = f"intersection-mpcrl-dynamicweights-{subenv_version}" \
+                    if env_version == "v1" else f"intersection-mpcrl-refspeed-{subenv_version}"
                      
     algo_name: str = cfg.agent.version
     algo_parameters = cfg.agent[algo_name]
     algo_config_class = ALGO_CONFIG_MAPPING[algo_name]
               
     def env_creator(config):
-        return IntersectionMpcrlEnv_v1(config=config, render_mode="rgb_array") \
-                    if env_version == "v1" else IntersectionMpcrlEnv_v0(config=config, render_mode="rgb_array")
+        return ENV_CLASS_MAPPING[env_class_name](config=config, render_mode="rgb_array")
                     
     register_env(
-        name=env_name,
+        name=env_class_name,
         env_creator=env_creator,
     )
+
+    # Create a Env instance first to register the environment
+    env = ENV_CLASS_MAPPING[env_class_name](config=None, render_mode="rgb_array")
+    print(f"ENV: {env.unwrapped}")
 
     config = (
         algo_config_class()
@@ -56,7 +70,7 @@ def train_mpcrl_agent(cfg: DictConfig):
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
         # environment.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.environment
         .environment(
-            env=env_name,
+            env=env_class_name,
             render_env=False, # FIXME: enable visualization later for debugging
             is_atari=False,
             disable_env_checking=True,
@@ -98,6 +112,11 @@ def train_mpcrl_agent(cfg: DictConfig):
         .callbacks(
             
         )
+        # .reporting(
+        #     keep_per_episode_custom_metrics=True,
+        #     metrics_episode_collection_timeout_s=60,
+        #     metrics_num_episodes_for_smoothing=100    
+        # )
     )
     
     if algo_name == "ppo":
@@ -130,9 +149,9 @@ def train_mpcrl_agent(cfg: DictConfig):
     
     algo = config.build_algo()
     
-    for i in range(1):
-        results = algo.train()
-        pp(results)
+    # for i in range(1):
+    #     results = algo.train()
+    #     pp(results)
 
 if __name__ == "__main__":
     train_mpcrl_agent()

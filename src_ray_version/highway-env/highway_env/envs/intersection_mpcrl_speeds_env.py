@@ -1,4 +1,7 @@
-from .intersection_mpc_env import IntersectionMpcEnv_v0
+from .intersection_mpc_env import (
+    IntersectionMpcEnv_v0,
+    IntersectionMpcEnv_v1,
+)
 from highway_env.envs.common.action import (
     Action,
     PureMpcAction,
@@ -26,7 +29,7 @@ class IntersectionMpcrlSpeedsEnv_v0(IntersectionMpcEnv_v0):
         return config
 
     def __str__(self) -> str:
-        return f"<IntersectionMpcrlEnv-v0:Reference_speed instance>"
+        return f"<Intersection-MpcRL-Env <Reference Speeds> [NO Collision Avoidance]>"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -46,3 +49,26 @@ class IntersectionMpcrlSpeedsEnv_v0(IntersectionMpcEnv_v0):
         ref_speed = action
         mpc_action = self._solve_mpc(weights=None, ref_speed=ref_speed)
         return mpc_action
+
+class IntersectionMpcrlSpeedsEnv_v1(IntersectionMpcEnv_v1):
+    """ MPCRL: Reference speed with manual external collision avoidance. """
+    def __init__(self, config: dict = None, render_mode: str | None = None):
+        super().__init__(config=config, render_mode=render_mode)
+
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "action": {
+                    "type": "ReferenceSpeedAction",  # use 6 to predict 30, optimal: 16
+                },
+            }
+        )
+        return config
+    
+    def __str__(self) -> str:
+        return f"<Intersection-MpcRL-Env <Reference Speeds> [Manual External Collision Avoidance]>"
+    
+    def __repr__(self) -> str:
+        return self.__str__()
