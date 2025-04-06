@@ -1,36 +1,33 @@
+import hydra
 import numpy as np
 import gymnasium
 import highway_env
 from pprint import pprint
-
+from omegaconf import DictConfig
 np.set_printoptions(suppress=True)
 
-if __name__ == "__main__":
+
+@hydra.main(version_base=None, config_path=".", config_name="config")
+def run_mpc_agent(cfg: DictConfig):
+
+    mpc_config = cfg.mpc
+
     # Create the MPC environment
-    env = gymnasium.make("intersection-mpc-v0", render_mode="rgb_array")
-    
-    # Print environment information for debugging
-    # print(f"Environment: {env}")
-    # print(f"Observation space: {env.observation_space}")
-    # print(f"Action space: {env.action_space}")
-    
-    # Reset the environment
-    obs, info = env.reset()
-    
-    # Run simulation
+    env = gymnasium.make(
+        f"intersection-mpc-{mpc_config.version}", render_mode="rgb_array")
+    print(f"ENV: {env.unwrapped}")
+
+    _, _ = env.reset()
     for i in range(200):
         # For MPC environments, we pass an empty a dummy action. but
         # The MPC controller inside the environment will generate the actual control (inside _simulate)
-        action = env.action_space.sample()  # Sample a valid action from the action space to start the simulation
-        
-        obs, reward, terminated, truncated, info = env.step(action=action)
+        _, _, terminated, truncated, _ = env.step(
+            action=env.action_space.sample())
         env.render()
-        
-        # Checking the reward
-        # print(f"Step {i}, Reward: {reward}")
-        
         if terminated or truncated:
-            # print("Episode finished")
             break
-
     env.close()
+
+
+if __name__ == "__main__":
+    run_mpc_agent()

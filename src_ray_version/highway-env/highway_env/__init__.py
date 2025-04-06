@@ -114,22 +114,52 @@ def _register_highway_envs():
     # u_turn_env.py
     register(id="u-turn-v0", entry_point="highway_env.envs.u_turn_env:UTurnEnv")
 
+    # --------------------- #
     # intersection_mpc_env.py
     # PureMpc
     register(
         id="intersection-mpc-v0",
-        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_v0",
     )
-    # Mpcrl-v0: reference speed
+    # With manual external collision avoidance
+    register(
+        id="intersection-mpc-v1",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_v1",
+    )
+    # With collision avoidance in the cost function
+    
+    # With collision avoidance in the constraints
+
+    # --------------------- #
+
+    # ------------------------------ #
+    # intersection_mpcrl_speeds_env.py
+    # MPCRL: Reference speeds
+    # Without collision avoidance
     register(
         id="intersection-mpcrl-refspeed-v0",
-        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v0",
+        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_v0",
     )
-    # Mpcrl-v1: dynamic weights
+    # With manual external collision avoidance
+
+    # With collision avoidance in the cost function
+
+    # With collision avoidance in the constraints
+
+    
+    # ------------------------------ #
+
+    # ------------------------------- #
+    # intersection_mpcrl_weights_env.py
+    # MPCRL: Dynamic weights
+    # Without collision avoidance
     register(
         id="intersection-mpcrl-dynamicweights-v0",
-        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcrlEnv_v1",
+        entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_v0",
     )
+    # With manual external collision avoidance
 
-
+    # With collision avoidance in the cost function
+    
+    # ------------------------------- #
 _register_highway_envs()

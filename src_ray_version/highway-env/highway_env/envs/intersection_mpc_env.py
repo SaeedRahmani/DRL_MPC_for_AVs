@@ -2,6 +2,9 @@ import copy
 import numpy as np
 import highway_env
 import casadi as ca
+from shapely import LineString
+
+from shapely.errors import GEOSException
 
 from highway_env.envs import IntersectionEnv
 from highway_env.envs.common.action import (
@@ -15,20 +18,26 @@ from highway_env.envs.common.abstract import Observation
 from utils.vehicle import Vehicle
 
 
-class IntersectionMpcEnv(IntersectionEnv):
-    """ An intersection environment with MPC solver inside. """
+class IntersectionMpcEnv_v0(IntersectionEnv):
+    """ MPC: without collision avoidance. """
+
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
+
         # MPC parameters
         self.horizon: int = 16
-        self.dt: float = 0.1 
+        self.dt: float = 0.1
+
+        # Collision avoidance disable by default
+        self.enable_collision_avoidance = False
+        
         self.weight_components = [
             "state",
             "speed",
             "control",
-            # "distance",
-            # "collision", # new added
             "input_diff"
+            # "distance",
+            # "collision",
             # "final_state"
         ]
         self.default_weights = {
@@ -36,7 +45,7 @@ class IntersectionMpcEnv(IntersectionEnv):
             "weight_control": 1,
             "weight_final_state": 1,
             "weight_input_diff": 1,
-            # "weight_distance": 10,
+            "weight_distance": 10,
             "weight_collision": 1,
             "weight_state": 10,
         }
@@ -84,13 +93,13 @@ class IntersectionMpcEnv(IntersectionEnv):
                 "screen_width": 600,
                 "screen_height": 600,
                 # MPC
-                "horizon": 16,                
+                "horizon": 16,
             }
         )
         return config
 
     def __str__(self) -> str:
-        return f"<IntersectionMpcEnv instance>"
+        return f"<Intersection-PureMpc-Env [NO Collision Avoidance]>"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -207,9 +216,11 @@ class IntersectionMpcEnv(IntersectionEnv):
         steps_per_speed = 33  # Change speed every 33 steps
         if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
             self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
+            self.current_speed_idx = (
+                self.current_speed_idx + 1) % len(test_speeds)
 
-        mpc_action = self._solve_mpc(weights=None, ref_speed=np.array([[self.ref_speed]]))
+        mpc_action = self._solve_mpc(
+            weights=None, ref_speed=np.array([[self.ref_speed]]))
         return mpc_action
 
     def _solve_mpc(
@@ -252,17 +263,18 @@ class IntersectionMpcEnv(IntersectionEnv):
 
         # Get the index on the reference trajectory for ego vehicle
         self.ego_index = np.argmin(
-            [np.linalg.norm(self.ego_vehicle.position - trajectory_point) 
+            [np.linalg.norm(self.ego_vehicle.position - trajectory_point)
              for trajectory_point in self.reference_trajectory]
         )
-        
+
         # Update reference speed from RL if provided
         ref = np.copy(self.reference_states)
 
         if ref_speed is not None:
-            safe_speed = np.clip(ref_speed[0,0], 0, 30.0)  # Clip between 0 and max speed
+            # Clip between 0 and max speed
+            safe_speed = np.clip(ref_speed[0, 0], 0, 30.0)
             ref[:, 2] = safe_speed
-        
+
         closest_index = self.ego_index
 
         # Define the cost function
@@ -271,6 +283,9 @@ class IntersectionMpcEnv(IntersectionEnv):
         control_cost = 0
         input_diff_cost = 0
         final_state_cost = 0
+        if self.enable_collision_avoidance:
+            distance_cost = 0
+            collision_cost = 0
 
         for k in range(N):
             ref_traj_index = min(closest_index + k, ref.shape[0] - 1)
@@ -278,11 +293,13 @@ class IntersectionMpcEnv(IntersectionEnv):
             dx = x[0, k] - ref[ref_traj_index, 0]
             dy = x[1, k] - ref[ref_traj_index, 1]
 
-            ref_v = ref[ref_traj_index,2]
-            ref_heading = ref[ref_traj_index,3]
-            perp_deviation = dx * ca.sin(ref_heading) - dy * ca.cos(ref_heading)
-            para_deviation = dx * ca.cos(ref_heading) + dy * ca.sin(ref_heading)
- 
+            ref_v = ref[ref_traj_index, 2]
+            ref_heading = ref[ref_traj_index, 3]
+            perp_deviation = dx * \
+                ca.sin(ref_heading) - dy * ca.cos(ref_heading)
+            para_deviation = dx * \
+                ca.cos(ref_heading) + dy * ca.sin(ref_heading)
+
             # State cost
             state_cost += (
                 4 * perp_deviation**2 +
@@ -298,6 +315,25 @@ class IntersectionMpcEnv(IntersectionEnv):
             if k > 0:
                 input_diff_cost += 0.01 * \
                     ((u[0, k] - u[0, k-1])**2 + (u[1, k] - u[1, k-1])**2)
+
+            if self.enable_collision_avoidance:
+                for other_vehicle in self.agent_vehicles_mpc:
+                    dist = ca.norm_2(x[:2, k] - other_vehicle.position)
+                    # in casadi, use ca.if_else to branch
+                    distance_cost += ca.if_else(
+                        dist < 1.0,  # if-statement
+                        1000 / (dist + 1e-6)**2,  # if True
+                        100 / (dist + 1e-6)**2    # if False
+                    )
+
+                collision_cost += ca.if_else(
+                    self.is_collide,
+                    3000 * x[3, k] ** 2,
+                    0
+                )
+                for other_vehicle in self.agent_vehicles_mpc:
+                    other_vehicle.position = self.other_vehicle_model(
+                        other_vehicle, self.dt)
 
         # final state cost
         ref_traj_index = min(closest_index + N, ref.shape[0] - 1)
@@ -315,6 +351,11 @@ class IntersectionMpcEnv(IntersectionEnv):
             input_diff_cost * weights_dict["weight_input_diff"]
             # final_state_cost * weights_dict["weight_final_state"]
         )
+        if self.enable_collision_avoidance:
+            total_cost += (
+                distance_cost * weights_dict["weight_distance"] +
+                collision_cost * weights_dict["weight_collision"]
+            )
 
         # Define the vehicle dynamics using the Kinematic Bicycle Model
         def vehicle_model(x, u):
@@ -340,12 +381,13 @@ class IntersectionMpcEnv(IntersectionEnv):
         ])
 
         x0_states = np.tile(state, (N + 1, 1)).flatten()
-        # u0_controls = np.zeros(n_controls * N)    
+        # u0_controls = np.zeros(n_controls * N)
         # Instead of zeros, use previous solution as initial guess
        # Warm start the controls if available
         if hasattr(self, 'prev_solution') and self.prev_solution is not None:
             # Shift previous solution (drop first control, repeat last)
-            u0_controls = np.vstack([self.prev_solution[1:], self.prev_solution[-1]]).flatten()
+            u0_controls = np.vstack(
+                [self.prev_solution[1:], self.prev_solution[-1]]).flatten()
         else:
             # Initialize with zeros if no previous solution
             u0_controls = np.zeros(n_controls * N)
@@ -353,12 +395,12 @@ class IntersectionMpcEnv(IntersectionEnv):
 
         # Initial condition constraint
         g.append(x[:, 0] - state)
-    
+
         # State-update constraints for the entire horizon
         for k in range(N):
             x_next = x[:, k] + vehicle_model(x[:, k], u[:, k]) * self.dt
             g.append(x[:, k + 1] - x_next)
-        
+
         # Flatten constraints
         g = ca.vertcat(*g)
 
@@ -372,7 +414,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         # Bounds on state and control variables
         lbx = []
         ubx = []
-        
+
         for _ in range(N + 1):
             lbx += [-500, -500, -ca.pi, 0]
             ubx += [500, 500, ca.pi, 30]
@@ -380,7 +422,7 @@ class IntersectionMpcEnv(IntersectionEnv):
         for _ in range(N):
             lbx += [-5, -ca.pi / 3]
             ubx += [5, ca.pi / 3]
-        
+
         # Create and solve the optimization problem
         nlp = {
             'x': opt_variables,
@@ -389,18 +431,18 @@ class IntersectionMpcEnv(IntersectionEnv):
         }
 
         opts = {
-            'ipopt.print_level': 0, 
+            'ipopt.print_level': 0,
             'print_time': 0,
             'ipopt.max_iter': 1000,
             'ipopt.tol': 1e-6,
         }
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
-        
+
         sol = solver(x0=x0, lbx=lbx, ubx=ubx, lbg=lbg, ubg=ubg)
-        
+
         if not solver.stats()['success']:
             print("WARNING: Optimization failed to find a solution")
-            
+
         u_opt = sol['x'][-N * n_controls:].full().reshape(N, n_controls)
         self.last_acc = u_opt[0, 0]
         self.prev_solution = u_opt
@@ -433,7 +475,7 @@ class IntersectionMpcEnv(IntersectionEnv):
             position=self.current_observation[0, 1:3],
             vectorized_speed=self.current_observation[0, 3:5],
             heading=self._normalize_angle(self.current_observation[0, 5]),
-            sinh=self.current_observation[0,6], 
+            sinh=self.current_observation[0, 6],
             cosh=self.current_observation[0, 7],
         )
 
@@ -445,8 +487,9 @@ class IntersectionMpcEnv(IntersectionEnv):
                     index=i+1,
                     position=self.current_observation[i+1, 1:3],
                     vectorized_speed=self.current_observation[i+1, 3:5],
-                    heading=self._normalize_angle(self.current_observation[i+1, 5]),
-                    sinh=self.current_observation[0,6], 
+                    heading=self._normalize_angle(
+                        self.current_observation[i+1, 5]),
+                    sinh=self.current_observation[0, 6],
                     cosh=self.current_observation[0, 7],
                 ))
             assert len(self.agent_vehicles) == self.observed_vehicles_count
@@ -508,83 +551,275 @@ class IntersectionMpcEnv(IntersectionEnv):
         return np.array(trajectory)
 
 
-class IntersectionMpcrlEnv_v0(IntersectionMpcEnv):
+class IntersectionMpcEnv_v1(IntersectionMpcEnv_v0):
+    """ MPC: with manual collision avoidance. """
 
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
 
-    @classmethod
-    def default_config(cls) -> dict:
-        config = super().default_config()
-        config.update(
-            {
-                "action": {
-                    "type": "ReferenceSpeedAction", # use 6 to predict 30, optimal: 16
-                },             
-            }
-        )
-        return config
+        # Used for manual collision avoidance checking:
+        self.enable_collision_avoidance = True
+        self.weight_components.append("collision")
+        self.weight_components.append("distance")
 
-    def __str__(self) -> str:
-        return f"<IntersectionMpcrlEnv-v0:Reference_speed instance>"
+        self.collision_memory = 0           # Add collision memory counter
+        self.collision_memory_steps = 10    # How many steps to remember collision
+        self.memorized_conflict_points = None
+        self.memorized_conflict_indices = None
+        self.last_valid_stop_point = None
+        # Load collision detection parameters from config
+        # self.detection_dist = self.config.get("detection_distance", 100)
+        self.ttc_threshold = self.config.get("ttc_threshold", 3)
 
-    def __repr__(self) -> str:
-        return self.__str__()
+    def __str__(self):
+        return f"<Intersection-PureMpc-Env [Manual Collision Avoidance]>"
+
+    def __repr__(self):
+        return super().__repr__()
 
     def _predict_mpc_action(self, action: Action) -> Action:
         """ Predict the action of ego vehicle using MPC. """
         self._prepare_obs()
+        self._check_collision()  # Check for collision
 
         test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
         steps_per_speed = 33  # Change speed every 33 steps
         if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
             self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
+            self.current_speed_idx = (
+                self.current_speed_idx + 1) % len(test_speeds)
 
-        # the dynamic weights are used from RL agent.
-        ref_speed = action
-        mpc_action = self._solve_mpc(weights=None, ref_speed=ref_speed)
-        return mpc_action   
+        mpc_action = self._solve_mpc(
+            weights=None, ref_speed=np.array([[self.ref_speed]]))
+        return mpc_action
 
+    def predict_ego_future_positions(self, current_position, speed, heading, max_acceleration, dt, prediction_horizon, reference_speed):
+        """
+        Predict ego vehicle future positions based strictly on reference trajectory points.
+        Handles speed adjustments while following the reference path.
 
-class IntersectionMpcrlEnv_v1(IntersectionMpcEnv):
-    """ 
-    MPCRL: Dynamic weights
-    """
+        Returns:
+            list: List of predicted positions [(x1,y1), (x2,y2), ...]
+        """
+        future_positions = [current_position]
+        current_speed = speed
 
-    def __init__(self, config: dict = None, render_mode: str | None = None):
-        super().__init__(config=config, render_mode=render_mode)
+        # Find starting index on reference trajectory
+        start_index = np.argmin([
+            np.linalg.norm(current_position - np.array(point[:2]))
+            for point in self.reference_trajectory
+        ])
 
-    @classmethod
-    def default_config(cls) -> dict:
-        config = super().default_config()
-        config.update(
-            {
-                "action": {
-                    "type": "DynamicWeightsAction",
-                    "num_weights": 4,
-                },
-            }
+        # Calculate cumulative distances along reference trajectory
+        ref_points = self.reference_trajectory[start_index:, :2]
+        if len(ref_points) < 2:
+            return future_positions
+
+        cumulative_distances = [0]
+        for i in range(1, len(ref_points)):
+            d = np.linalg.norm(ref_points[i] - ref_points[i-1])
+            cumulative_distances.append(cumulative_distances[-1] + d)
+
+        # For each prediction step
+        current_distance = 0
+
+        for _ in range(prediction_horizon):
+            # Update speed based on reference speed
+            if current_speed < reference_speed:
+                current_speed = min(
+                    current_speed + max_acceleration * dt, reference_speed)
+            else:
+                current_speed = reference_speed
+
+            # Calculate distance traveled in this time step
+            current_distance += current_speed * dt
+
+            # Find the reference points we're between
+            next_idx = np.searchsorted(cumulative_distances, current_distance)
+            if next_idx >= len(ref_points):
+                # If we've gone beyond the reference trajectory, stop here
+                break
+
+            if next_idx == 0:
+                # We're still near the start
+                next_position = ref_points[0]
+            else:
+                # Interpolate between reference points
+                prev_idx = next_idx - 1
+                prev_point = ref_points[prev_idx]
+                next_point = ref_points[next_idx]
+
+                # Calculate interpolation factor
+                prev_dist = cumulative_distances[prev_idx]
+                next_dist = cumulative_distances[next_idx]
+                alpha = (current_distance - prev_dist) / (next_dist -
+                                                          prev_dist) if next_dist != prev_dist else 1.0
+                alpha = np.clip(alpha, 0, 1)
+
+                # Interpolate position
+                next_position = prev_point + alpha * (next_point - prev_point)
+
+            future_positions.append(next_position)
+
+        if len(future_positions) <= 1:
+            return [current_position] * prediction_horizon  # Fallback
+        return future_positions
+
+    def predict_future_positions(self, current_position, speed, heading, dt, prediction_horizon):
+        """
+        Predict the future positions of a vehicle based on its current speed and heading.
+
+        Args:
+            current_position (np.ndarray): Current position [x, y] of the vehicle.
+            speed (float): Current speed of the vehicle.
+            heading (float): Heading angle of the vehicle in radians.
+            dt (float): Time step for prediction.
+            prediction_horizon (int): Number of steps to predict into the future.
+
+        Returns:
+            list: A list of future positions [x, y] at each time step.
+        """
+        future_positions = [current_position]
+        for _ in range(prediction_horizon):
+            next_position = future_positions[-1] + speed * dt * np.array([
+                np.cos(heading),
+                np.sin(heading)
+            ])
+            future_positions.append(next_position)
+        return future_positions
+
+    def _check_collision(self):
+        """Modified collision detection to preserve collision state during memory period"""
+        PREDICTION_HORIZON = 30
+        TIME_THRESHOLD = 30
+
+        # If we're in memory period and have stored collision points, use those
+        if self.collision_memory > 0 and self.memorized_conflict_points is not None:
+            self.conflict_points = self.memorized_conflict_points
+            self.conflict_index = self.memorized_conflict_indices
+            self.is_collide = True
+            self.collision_memory -= 1
+            return
+
+        # Normal collision detection logic
+        ego_location = np.array(self.ego_vehicle.position)
+        self.ego_index = np.argmin([
+            np.linalg.norm(ego_location - np.array(trajectory_point))
+            for trajectory_point in self.reference_trajectory
+        ])
+
+        ego_future_positions = self.predict_ego_future_positions(
+            current_position=self.ego_vehicle.position,
+            speed=self.ego_vehicle.speed,
+            heading=self.ego_vehicle.heading,
+            max_acceleration=self.ego_vehicle.max_acceleration,
+            dt=self.dt,
+            prediction_horizon=PREDICTION_HORIZON,
+            reference_speed=self.reference_states[self.ego_index, 2]
         )
-        return config
 
-    def __str__(self) -> str:
-        return f"<IntersectionMpcrlEnv-v1:Dynamic_weights instance>"
+        try:
+            ego_path = LineString(ego_future_positions)
+        except GEOSException as e:
+            print(f"Warning: Invalid LineString input: {e}")
+            # Handle the error (e.g., skip this step, use a default action)
+            return  # Or take some other action
 
-    def __repr__(self) -> str:
-        return self.__str__()
+        self.agent_current_locations = []
+        self.agent_future_locations = []
+        self.conflict_points = []
+        self.conflict_index = []
+        self.agent_collide = []
 
-    def _predict_mpc_action(self, action: Action) -> Action:
-        """ Predict the action of ego vehicle using MPC. """
-        self._prepare_obs()
+        for agent_veh in self.agent_vehicles:
+            agent_current_location = np.array(agent_veh.position)
+            self.agent_current_locations.append(agent_current_location)
 
-        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
-        steps_per_speed = 33  # Change speed every 33 steps
-        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
-            self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (self.current_speed_idx + 1) % len(test_speeds)
+            agent_future_positions = self.predict_future_positions(
+                current_position=agent_current_location,
+                speed=agent_veh.speed,
+                heading=agent_veh.heading,
+                dt=self.dt,
+                prediction_horizon=PREDICTION_HORIZON
+            )
+            self.agent_future_locations.append(agent_future_positions)
 
-        # the dynamic weights are used from RL agent.
-        weights = action
-        mpc_action = self._solve_mpc(weights=weights, ref_speed=np.array([[self.ref_speed]]))
-        return mpc_action   
+            agent_path = LineString(agent_future_positions)
+            intersection = ego_path.intersection(agent_path)
+
+            collision_detected = False
+            intersection_point = None
+            conflict_idx = None
+
+            if not intersection.is_empty:
+                intersection_points = []
+
+                if intersection.geom_type == 'Point':
+                    intersection_points.append(
+                        (intersection.x, intersection.y))
+                elif intersection.geom_type == 'LineString':
+                    coords = list(intersection.coords)
+                    if coords:
+                        mid_idx = len(coords) // 2
+                        intersection_points.append(coords[mid_idx])
+                elif intersection.geom_type == 'MultiPoint':
+                    for point in intersection.geoms:
+                        intersection_points.append((point.x, point.y))
+                elif intersection.geom_type == 'MultiLineString':
+                    for line in intersection.geoms:
+                        coords = list(line.coords)
+                        if coords:
+                            mid_idx = len(coords) // 2
+                            intersection_points.append(coords[mid_idx])
+
+                for int_point in intersection_points:
+                    intersection_point = np.array(int_point)
+
+                    ego_times = [i for i in range(len(ego_future_positions))]
+                    agent_times = [i for i in range(
+                        len(agent_future_positions))]
+
+                    ego_dists = [np.linalg.norm(np.array(pos) - intersection_point)
+                                 for pos in ego_future_positions]
+                    agent_dists = [np.linalg.norm(np.array(pos) - intersection_point)
+                                   for pos in agent_future_positions]
+
+                    ego_time = ego_times[np.argmin(ego_dists)]
+                    agent_time = agent_times[np.argmin(agent_dists)]
+
+                    if abs(ego_time - agent_time) < TIME_THRESHOLD:
+                        collision_detected = True
+                        ref_traj_dists = [np.linalg.norm(np.array(pos) - intersection_point)
+                                          for pos in self.reference_trajectory]
+                        conflict_idx = np.argmin(ref_traj_dists)
+                        break
+
+            self.agent_collide.append(collision_detected)
+            self.conflict_points.append(
+                intersection_point if collision_detected else None)
+            self.conflict_index.append(
+                conflict_idx if collision_detected else None)
+
+        # Check if there is any collision
+        self.is_collide = np.any(self.agent_collide)
+
+        # Update collision memory and store collision state
+        if self.is_collide:
+            self.collision_memory = self.collision_memory_steps
+            # Store the current collision state
+            self.memorized_conflict_points = self.conflict_points.copy()
+            self.memorized_conflict_indices = self.conflict_index.copy()
+        elif self.collision_memory > 0:
+            # Use memorized values during memory period
+            self.collision_memory -= 1
+            self.is_collide = True
+        else:
+            # Clear memorized values when memory expires
+            self.memorized_conflict_points = None
+            self.memorized_conflict_indices = None
+
+    def other_vehicle_model(self, other_vehicle, dt):
+        new_position = other_vehicle.position + other_vehicle.speed * dt * \
+            np.array([np.cos(other_vehicle.heading),
+                     np.sin(other_vehicle.heading)])
+        return new_position
