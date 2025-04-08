@@ -1,4 +1,5 @@
 import ray
+import ray.tune as tune
 import hydra
 import gymnasium
 from gymnasium.envs.registration import VectorizeMode
@@ -12,12 +13,19 @@ from omegaconf import DictConfig, OmegaConf
 from ray.tune.registry import register_env
 from ray.rllib.algorithms.ppo import PPOConfig
 from ray.rllib.algorithms.sac import SACConfig
+from ray.tune.logger import (
+    JsonLoggerCallback,
+    CSVLoggerCallback,
+    TBXLoggerCallback
+)
+from ray.tune import TuneConfig, RunConfig
+from ray.tune.schedulers import ASHAScheduler
 from pprint import pp
 
 
 ALGO_CONFIG_MAPPING = {
-    "ppo": PPOConfig,
-    "sac": SACConfig,
+    "PPO": PPOConfig,
+    "SAC": SACConfig,
 }
 ENV_CLASS_MAPPING = {
     "intersection-mpcrl-dynamicweights-v0": IntersectionMpcrlWeightsEnv_v0,
@@ -28,14 +36,14 @@ ENV_CLASS_MAPPING = {
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def train_mpcrl_agent(cfg: DictConfig):
-    print(OmegaConf.to_yaml(cfg))
-    
+    # print(OmegaConf.to_yaml(cfg))
+    ray.shutdown()
     ray.init(
         num_cpus=22,  
         num_gpus=1,
         # include_dashboard=True,
     )
-    print(ray.available_resources())
+    pp(ray.available_resources())
 
     framework: str = cfg.rllib.framework # torch
     use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
@@ -58,7 +66,10 @@ def train_mpcrl_agent(cfg: DictConfig):
 
     # Create a Env instance first to register the environment
     env = ENV_CLASS_MAPPING[env_class_name](config=None, render_mode="rgb_array")
-    print(f"ENV: {env.unwrapped}")
+    print(f"ENV: {env.unwrapped}", 
+        #   {env.unwrapped.action_space}, 
+        #   {env.unwrapped.observation_space}
+          )
 
     config = (
         algo_config_class()
@@ -80,7 +91,7 @@ def train_mpcrl_agent(cfg: DictConfig):
         .env_runners(
             num_env_runners=cfg.rllib.num_env_runners,
             num_cpus_per_env_runner=cfg.rllib.num_cpus_per_env_runner,
-            num_gpus_per_env_runner=1 / cfg.rllib.num_env_runners,
+            num_gpus_per_env_runner=cfg.rllib.num_gpus / cfg.rllib.num_env_runners,
             gym_env_vectorize_mode=VectorizeMode.ASYNC, 
             # Set this to ASYNC to parallelize the individual sub environments within the vector. 
             # This can speed up your EnvRunners significantly when using heavier environments.
@@ -88,7 +99,8 @@ def train_mpcrl_agent(cfg: DictConfig):
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
         # resources.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.resources
         .resources(
-            num_gpus=cfg.rllib.num_gpus,
+            # num_gpus=cfg.rllib.num_gpus,
+            num_gpus_per_worker=cfg.rllib.num_gpus / cfg.rllib.num_env_runners,
         )
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
         # training.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.training
@@ -109,17 +121,15 @@ def train_mpcrl_agent(cfg: DictConfig):
             evaluation_num_env_runners=cfg.agent.evaluation_num_env_runners,
             evaluation_interval=cfg.agent.evaluation_interval
         )
-        .callbacks(
-            
-        )
-        # .reporting(
-        #     keep_per_episode_custom_metrics=True,
+        .callbacks()
+        .reporting(
+            keep_per_episode_custom_metrics=True,
         #     metrics_episode_collection_timeout_s=60,
         #     metrics_num_episodes_for_smoothing=100    
-        # )
+        )
     )
     
-    if algo_name == "ppo":
+    if algo_name == "PPO":
         config.training(
             # use_critic=algo_parameters.use_critic,
             # use_gae=algo_parameters.use_gae,
@@ -128,7 +138,7 @@ def train_mpcrl_agent(cfg: DictConfig):
             kl_coeff=algo_parameters.kl_coeff,
             kl_target=algo_parameters.kl_target,
         )
-    elif algo_name == "sac":
+    elif algo_name == "SAC":
         config.training(
             # target_network_update_freq=algo_parameters.target_network_update_freq,
             replay_buffer_config={
@@ -146,12 +156,54 @@ def train_mpcrl_agent(cfg: DictConfig):
     else:
         raise ValueError("Using unexpected algorithm name")
     
-    
-    algo = config.build_algo()
-    
-    # for i in range(1):
-    #     results = algo.train()
-    #     pp(results)
+    ## Deprecated in Ray 2.7
+    # from ray.tune.logger import UnifiedLogger
+    # def logger_creator(config):
+    #     return UnifiedLogger(config, "./loggings/", loggers=None)
+
+    ## Now, using tune to train the agent.
+    # algo = config.build_algo(logger_creator=logger_creator)   
+    # results = algo.train()
+    # pp(results)
+
+    # tune.run(
+    #     cfg.agent.version,
+    #     config=config.to_dict(),
+    #     callbacks=[
+    #         JsonLoggerCallback(), 
+    #         CSVLoggerCallback(), 
+    #         TBXLoggerCallback()
+    #     ],
+    #     stop={"training_iteration": 10}
+    # )
+
+    param_space = config.to_dict()
+    param_space["lr"] = tune.loguniform(1e-4, 1e-1)
+    param_space["gamma"] = tune.choice([0.95, 0.98, 0.99])
+    param_space["train_batch_size"] = tune.choice([2000, 4000, 6000])
+
+    tune_config = TuneConfig(
+            metric="env_runners/episode_reward_mean",
+            mode="max",
+            num_samples=10,
+            scheduler=ASHAScheduler()
+        )
+
+    run_config = RunConfig(
+        name=f"{cfg.agent.version}_tuning",
+        storage_path="~/ray_results",
+        stop={"env_runners/episode_reward_mean": 200},  # stop condition
+        verbose=1,
+    )
+
+    tune.Tuner(
+        trainable=cfg.agent.version,
+        param_space=param_space,
+        tune_config=tune_config,
+        run_config=run_config,
+    ).fit()
+
+    ray.shutdown()
 
 if __name__ == "__main__":
     train_mpcrl_agent()

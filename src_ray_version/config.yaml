@@ -1,38 +1,40 @@
 rllib:
   framework: "torch"
-  use_new_API_stack: False # using old stack for now
+  use_new_API_stack: False      # using old stack for now
   num_gpus: 1
-  num_cpus_for_main_process: 2  # This is only relevant when running RLlib through Tune. 
+  num_cpus_for_main_process: 1  # This is only relevant when running RLlib through Tune. 
                                 # Otherwise, `Algorithm.training_step()` runs in the main program (driver).
   num_env_runners: 10
-  num_cpus_per_env_runner: 2
+  num_cpus_per_env_runner: 1
 agent:
-  version: "ppo" 
+  version: "SAC"                # "PPO" or "SAC"  
   # training
   gamma: 0.9
   lr: 1e-4
-  train_batch_size : 128 # `train_batch_size_per_learner` is its equivalent to new API stack
-                        # The number of complete passes over the entire train batch
-  minibatch_size: 64    # The size of minibatches to use to further split the train batch into
+  train_batch_size : 128        # `train_batch_size_per_learner` is its equivalent to new API stack
+                                # The number of complete passes over the entire train batch
+  minibatch_size: 64            # The size of minibatches to use to further split the train batch into
   shuffle_batch_per_epoch: True
   num_epochs: 10
   # evaluation
   evaluation_num_env_runners: 0
-  evaluation_interval: 1  # Evaluate with every evaluation_interval training iterations. 
-                          # The evaluation stats are reported under the “evaluation” metric key. 
-                          # Set to None (or 0) for no evaluation.
+  evaluation_interval: 1        # Evaluate with every evaluation_interval training iterations. 
+                                # The evaluation stats are reported under the “evaluation” metric key. 
+                                # Set to None (or 0) for no evaluation.
   evaluation_duration: "auto"
   evaluation_duration_unit: "episode"
+
   # https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#ppo
-  ppo:
+  PPO:
     use_critic: True
     use_gae: False
     lambda_: 0.01
     use_kl_loss: True
     kl_coeff: 1
     kl_target: 1
+
   # https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#sac
-  sac:
+  SAC:
     target_network_update_freq: 32
 env:
   env_version: "v1"

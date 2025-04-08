@@ -221,7 +221,7 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
 
         mpc_action = self._solve_mpc(
             weights=None, ref_speed=np.array([[self.ref_speed]]))
-        return mpc_action
+        return mpc_action.astype(np.float32)
 
     def _solve_mpc(
         self,
