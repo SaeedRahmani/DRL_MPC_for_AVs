@@ -12,7 +12,7 @@ agent:
   # training
   gamma: 0.9
   lr: 1e-4
-  train_batch_size : 128        # `train_batch_size_per_learner` is its equivalent to new API stack
+  train_batch_size : 4096        # `train_batch_size_per_learner` is its equivalent to new API stack
                                 # The number of complete passes over the entire train batch
   minibatch_size: 64            # The size of minibatches to use to further split the train batch into
   shuffle_batch_per_epoch: True

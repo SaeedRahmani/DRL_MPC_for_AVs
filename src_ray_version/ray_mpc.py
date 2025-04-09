@@ -1,3 +1,5 @@
+import os 
+import logging
 import ray
 import ray.tune as tune
 import hydra
@@ -18,7 +20,7 @@ from ray.tune.logger import (
     CSVLoggerCallback,
     TBXLoggerCallback
 )
-from ray.tune import TuneConfig, RunConfig
+from ray.tune import TuneConfig, RunConfig, CLIReporter
 from ray.tune.schedulers import ASHAScheduler
 from pprint import pp
 
@@ -38,12 +40,16 @@ ENV_CLASS_MAPPING = {
 def train_mpcrl_agent(cfg: DictConfig):
     # print(OmegaConf.to_yaml(cfg))
     ray.shutdown()
+
     ray.init(
         num_cpus=22,  
         num_gpus=1,
-        # include_dashboard=True,
+        logging_level=logging.INFO,
+        log_to_driver=False,    # disable the pid loggings.
+        include_dashboard=False,
     )
-    pp(ray.available_resources())
+
+    # pp(ray.available_resources())
 
     framework: str = cfg.rllib.framework # torch
     use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
@@ -177,7 +183,13 @@ def train_mpcrl_agent(cfg: DictConfig):
                 CSVLoggerCallback(), 
                 TBXLoggerCallback()
             ],
-            stop={"training_iteration": 10}
+            stop={"training_iteration": 10},
+            # verbose=0,
+            progress_reporter=CLIReporter(
+                print_intermediate_tables=True,
+                metric_columns=["env_runners/episode_reward_mean", "env_runners/episode_len_mean"],
+            ),
+            # verbose=get_air_verbosity(AirVerbosity.DEFAULT)
         )
     else:
         # define param space
