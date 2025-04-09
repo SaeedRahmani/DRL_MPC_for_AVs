@@ -156,52 +156,56 @@ def train_mpcrl_agent(cfg: DictConfig):
     else:
         raise ValueError("Using unexpected algorithm name")
     
-    ## Deprecated in Ray 2.7
+    ################################################
+    ## This way of training the agent is deprecated.
+    ## Now, use ray.tune.run(...) or Tuner().fit() 
+    ## to train the agent.
+    ################################################
     # from ray.tune.logger import UnifiedLogger
     # def logger_creator(config):
     #     return UnifiedLogger(config, "./loggings/", loggers=None)
-
-    ## Now, using tune to train the agent.
     # algo = config.build_algo(logger_creator=logger_creator)   
     # results = algo.train()
     # pp(results)
 
-    # tune.run(
-    #     cfg.agent.version,
-    #     config=config.to_dict(),
-    #     callbacks=[
-    #         JsonLoggerCallback(), 
-    #         CSVLoggerCallback(), 
-    #         TBXLoggerCallback()
-    #     ],
-    #     stop={"training_iteration": 10}
-    # )
-
-    param_space = config.to_dict()
-    param_space["lr"] = tune.loguniform(1e-4, 1e-1)
-    param_space["gamma"] = tune.choice([0.95, 0.98, 0.99])
-    param_space["train_batch_size"] = tune.choice([2000, 4000, 6000])
-
-    tune_config = TuneConfig(
-            metric="env_runners/episode_reward_mean",
-            mode="max",
-            num_samples=10,
-            scheduler=ASHAScheduler()
+    if cfg.rllib.enable_tuner == False:
+        tune.run(
+            cfg.agent.version,
+            config=config.to_dict(),
+            callbacks=[
+                JsonLoggerCallback(), 
+                CSVLoggerCallback(), 
+                TBXLoggerCallback()
+            ],
+            stop={"training_iteration": 10}
         )
-
-    run_config = RunConfig(
-        name=f"{cfg.agent.version}_tuning",
-        storage_path="~/ray_results",
-        stop={"env_runners/episode_reward_mean": 200},  # stop condition
-        verbose=1,
-    )
-
-    tune.Tuner(
-        trainable=cfg.agent.version,
-        param_space=param_space,
-        tune_config=tune_config,
-        run_config=run_config,
-    ).fit()
+    else:
+        # define param space
+        param_space = config.to_dict()
+        param_space["lr"] = tune.loguniform(1e-4, 1e-1)
+        param_space["gamma"] = tune.choice([0.95, 0.98, 0.99])
+        param_space["train_batch_size"] = tune.choice([2000, 4000, 6000])
+        # set tune config
+        tune_config = TuneConfig(
+                metric="env_runners/episode_reward_mean",
+                mode="max",
+                num_samples=10,
+                scheduler=ASHAScheduler()
+            )
+        # set run config
+        run_config = RunConfig(
+            name=f"{cfg.agent.version}_tuning",
+            storage_path="~/ray_results",
+            stop={"env_runners/episode_reward_mean": 200},  # stop condition
+            verbose=1,
+        )
+        # paramenter tuning
+        tune.Tuner(
+            trainable=cfg.agent.version,
+            param_space=param_space,
+            tune_config=tune_config,
+            run_config=run_config,
+        ).fit()
 
     ray.shutdown()
 

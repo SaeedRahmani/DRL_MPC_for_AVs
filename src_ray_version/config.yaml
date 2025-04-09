@@ -1,4 +1,5 @@
 rllib:
+  enable_tuner: false
   framework: "torch"
   use_new_API_stack: False      # using old stack for now
   num_gpus: 1
