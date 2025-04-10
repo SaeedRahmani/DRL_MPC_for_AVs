@@ -267,8 +267,14 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
              for trajectory_point in self.reference_trajectory]
         )
 
-        # Update reference speed from RL if provided
-        ref = np.copy(self.reference_states)
+        if self.manual_collision_avoidance:
+            # Generate new reference states, given the result of collision detection
+            ref = self.update_reference_states(
+                speed_override=self.speed_override,
+                speed_overide_from_RL=ref_speed)
+        else:
+            # Update reference speed from RL if provided
+            ref = np.copy(self.reference_states)
 
         if ref_speed is not None:
             # Clip between 0 and max speed
@@ -550,6 +556,53 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
 
         return np.array(trajectory)
 
+    def update_reference_states(self, speed_override=None, speed_overide_from_RL=None) -> np.ndarray:
+        """Update reference states with stored collision information"""
+        DEFAULT_MAX_SPEED = 30.0
+        SAFETY_BUFFER_POINTS = 5
+        
+        if speed_overide_from_RL is not None:
+            new_ref = np.copy(self.reference_states)
+            safe_speed = np.clip(speed_overide_from_RL[0,0], 0, DEFAULT_MAX_SPEED)
+            new_ref[:, 2] = safe_speed
+            # print('Using RL speed override')
+            return new_ref
+
+        if not self.is_collide:
+            # print('Using no collision avoidance')
+            return np.copy(self.reference_states)
+
+        new_reference_states = np.copy(self.reference_states)
+        
+        # Use either current or memorized conflict indices
+        conflict_indices = self.conflict_index
+        if self.collision_memory > 0 and self.memorized_conflict_indices is not None:
+            conflict_indices = self.memorized_conflict_indices
+            
+        valid_conflict_indices = [idx for idx in conflict_indices if idx is not None]
+        
+        if not valid_conflict_indices:
+            print('No valid conflict indices')
+            return new_reference_states
+            
+        earliest_conflict_index = min(valid_conflict_indices)
+        stop_index = max(self.ego_index + 1, earliest_conflict_index - SAFETY_BUFFER_POINTS)
+        stop_index = min(stop_index, len(self.reference_trajectory) - 1)  # Cap to max valid index 
+        points_to_stop = stop_index - self.ego_index
+        
+        if points_to_stop > 0:
+            current_speed = self.ego_vehicle.speed
+            deceleration_profile = np.linspace(current_speed, 0, points_to_stop)
+            new_reference_states[self.ego_index:stop_index, 2] = deceleration_profile
+            new_reference_states[stop_index:, 2] = 0.0
+            self.stop_point = self.reference_trajectory[stop_index]
+            self.last_valid_stop_point = self.stop_point  # Store last valid stop point
+            # print('Using collision avoidance')
+        elif self.last_valid_stop_point is not None:
+            # Use last valid stop point if available
+            self.stop_point = self.last_valid_stop_point
+            
+        return new_reference_states
 
 class IntersectionMpcEnv_v1(IntersectionMpcEnv_v0):
     """ MPC: with manual collision avoidance. """
@@ -570,6 +623,26 @@ class IntersectionMpcEnv_v1(IntersectionMpcEnv_v0):
         # Load collision detection parameters from config
         # self.detection_dist = self.config.get("detection_distance", 100)
         self.ttc_threshold = self.config.get("ttc_threshold", 3)
+        self.speed_override = self.config.get("speed_override", 0)
+        
+        self.weight_components = [
+            "state",
+            "speed",
+            "control",
+            "input_diff"
+            "distance",
+            "collision",
+            "final_state"
+        ]
+        self.default_weights = {
+            "weight_speed": 1,
+            "weight_control": 1,
+            "weight_final_state": 1,
+            "weight_input_diff": 1,
+            "weight_distance": 10,
+            "weight_collision": 1,
+            "weight_state": 10,
+        }
 
     def __str__(self):
         return f"<Intersection-PureMpc-Env [Manual Collision Avoidance]>"

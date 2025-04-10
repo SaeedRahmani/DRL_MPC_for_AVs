@@ -49,4 +49,4 @@ mpc:
   env_version: "v1"
   ttc_threshold: 3        # 3 seconds 
   detection_distance: 100 # 100 meters
-
+  speed_override: 0

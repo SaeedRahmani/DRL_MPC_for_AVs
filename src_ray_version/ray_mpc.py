@@ -105,10 +105,10 @@ def train_mpcrl_agent(cfg: DictConfig):
         )
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
         # resources.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.resources
-        .resources(
-            # num_gpus=cfg.rllib.num_gpus,
-            num_gpus_per_worker=cfg.rllib.num_gpus / cfg.rllib.num_env_runners,
-        )
+        # .resources(
+        #     # num_gpus=cfg.rllib.num_gpus,
+        #     num_gpus_per_worker=cfg.rllib.num_gpus / cfg.rllib.num_env_runners,
+        # )
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
         # training.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.training
         .training(
