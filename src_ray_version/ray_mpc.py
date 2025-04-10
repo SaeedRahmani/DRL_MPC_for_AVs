@@ -5,6 +5,7 @@ import ray.tune as tune
 import hydra
 import gymnasium
 from gymnasium.envs.registration import VectorizeMode
+import ray.tune
 from highway_env.envs import (
     IntersectionMpcrlWeightsEnv_v0, 
     IntersectionMpcrlWeightsEnv_v1,
@@ -175,22 +176,28 @@ def train_mpcrl_agent(cfg: DictConfig):
     # pp(results)
 
     if cfg.rllib.enable_tuner == False:
-        tune.run(
-            cfg.agent.version,
-            config=config.to_dict(),
-            callbacks=[
-                JsonLoggerCallback(), 
-                CSVLoggerCallback(), 
-                TBXLoggerCallback()
-            ],
-            stop={"training_iteration": 10},
-            # verbose=0,
-            progress_reporter=CLIReporter(
-                print_intermediate_tables=True,
-                metric_columns=["env_runners/episode_reward_mean", "env_runners/episode_len_mean"],
+        tuner = ray.tune.Tuner(
+        cfg.agent.version,
+        param_space=config.to_dict(),
+        tune_config=TuneConfig(
             ),
-            # verbose=get_air_verbosity(AirVerbosity.DEFAULT)
+        run_config=RunConfig(
+            storage_path="~/DEV/XZL",
+            name=f"{cfg.agent.version}",
+            callbacks=[TBXLoggerCallback(), CSVLoggerCallback(), JsonLoggerCallback()],
+            stop={
+                "training_iteration": 2
+            },
+            # 0 = silent, 
+            # 1 = default (display result table for the last iteration), 
+            # 2 = verbose (display result table for each iteration).
+            verbose=1,
+            # progress_reporter=reporter,
+            ),
         )
+        results = tuner.fit()
+        from pprint import pp
+        pp(results._results[0])
     else:
         # define param space
         param_space = config.to_dict()
