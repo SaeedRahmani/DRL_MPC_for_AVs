@@ -20,14 +20,19 @@ from highway_env.envs.u_turn_env import UTurnEnv
 from highway_env.envs.intersection_mpc_env import (
     IntersectionMpcEnv_noCA,
     IntersectionMpcEnv_manual,
+    IntersectionMpcEnv_cost,
+    IntersectionMpcEnv_constraint,
 )
 from highway_env.envs.intersection_mpcrl_speeds_env import (
     IntersectionMpcrlSpeedsEnv_noCA,
     IntersectionMpcrlSpeedsEnv_manual,
+    IntersectionMpcrlSpeedsEnv_cost,
+    IntersectionMpcrlSpeedsEnv_constraint,
 )
 from highway_env.envs.intersection_mpcrl_weights_env import (
     IntersectionMpcrlWeightsEnv_noCA,
     IntersectionMpcrlWeightsEnv_manual,
+    IntersectionMpcrlWeightsEnv_cost,
 )
 
 
@@ -48,14 +53,19 @@ __all__ = [
     "TwoWayEnv",
     "UTurnEnv",
     # ---------- PureMpc ---------- #
-    "IntersectionMpcEnv_noCA",                  # No collision avoidance
-    "IntersectionMpcEnv_manual",              # With manual collision avoidance
+    "IntersectionMpcEnv_noCA",                  # w/o collision avoidance
+    "IntersectionMpcEnv_manual",                # w/ manual collision avoidance
+    "IntersectionMpcEnv_cost",                  # w/ collision cost in MPC
+    "IntersectionMpcEnv_constraint",            # w/ collision avoidance constraint in MPC
 
     # ---------- MPCRL: Reference speeds ---------- #
-    "IntersectionMpcrlSpeedsEnv_noCA",          # No collision avoidance
-    "IntersectionMpcrlSpeedsEnv_manual",      # With manual collision avoidance
-
+    "IntersectionMpcrlSpeedsEnv_noCA",          # w/o collision avoidance
+    "IntersectionMpcrlSpeedsEnv_manual",        # w/ manual collision avoidance
+    "IntersectionMpcrlSpeedsEnv_cost",          # w/ collision cost in MPC
+    "IntersectionMpcrlSpeedsEnv_constraint",    # w/ collision avoidance constraint in MPC
+    
     # ---------- MPCRL: Dynamic weights ----------- #
-    "IntersectionMpcrlWeightsEnv_noCA",         # No collision avoidance
-    "IntersectionMpcrlWeightsEnv_manual",     # With manual collision avoidance
+    "IntersectionMpcrlWeightsEnv_noCA",         # w/o collision avoidance
+    "IntersectionMpcrlWeightsEnv_manual",       # w/ manual collision avoidance
+    "IntersectionMpcrlWeightsEnv_cost",         # w/o collision cost in MPC
 ]

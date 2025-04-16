@@ -6,7 +6,8 @@
 
 - [ ] Manual MPC is not working
 - [ ] Check the if-statement w/ Saeed.
-- [ ] Not implement cost/constraint variants.
+  - [ ] What else constraint components do we consider or not?
+  - [ ] Add collision constraints in MPC (TODO)
 
 ## Environments
 
@@ -34,7 +35,7 @@
     <td> Add collision constraint in MPC </td>
   </tr>
   <tr>
-    <td rowspan="4"> MPC-RL<br>(Dynamic<br>weights)</td>
+    <td rowspan="3"> MPC-RL<br>(Dynamic<br>weights)</td>
     <td> <code> "intersection-mpcrl-dynamicweights-noCA" </code> </td>
     <td> No collison avoidance </td>
   </tr>
@@ -45,10 +46,6 @@
   <tr>
     <td> <code> "intersection-mpcrl-dynamicweights-cost" </code> </td>
     <td> Include collision cost in MPC </td>
-  </tr>
-  <tr>
-    <td> <code> "intersection-mpcrl-dynamicweights-constraint" </code> </td>
-    <td> Add collision constraint in MPC </td>
   </tr>
   <tr>
     <td rowspan="4"> MPC-RL<br>(Reference<br>speed)</td>

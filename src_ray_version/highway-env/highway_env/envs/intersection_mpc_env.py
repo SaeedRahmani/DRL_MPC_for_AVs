@@ -100,7 +100,7 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         return config
 
     def __str__(self) -> str:
-        return f"<Intersection-PureMpc-Env [NO Collision Avoidance]>"
+        return f"<Intersection-PureMpc-Env [NO CA]>"
 
     def __repr__(self) -> str:
         return self.__str__()
@@ -408,6 +408,12 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         # Initial condition constraint
         g.append(x[:, 0] - state)
 
+        # TODO: Add collision constraints
+        if self.CA_mode == "constraint":
+            pass
+            # ...
+            # g.append()
+
         # State-update constraints for the entire horizon
         for k in range(N):
             x_next = x[:, k] + vehicle_model(x[:, k], u[:, k]) * self.dt
@@ -652,7 +658,7 @@ class IntersectionMpcEnv_manual(IntersectionMpcEnv_noCA):
         }
 
     def __str__(self):
-        return f"<Intersection-PureMpc-Env [Manual Collision Avoidance]>"
+        return f"<Intersection-PureMpc-Env [MANUAL]>"
 
     def __repr__(self):
         return super().__repr__()
@@ -903,3 +909,36 @@ class IntersectionMpcEnv_manual(IntersectionMpcEnv_noCA):
             np.array([np.cos(other_vehicle.heading),
                      np.sin(other_vehicle.heading)])
         return new_position
+
+class IntersectionMpcEnv_cost(IntersectionMpcEnv_noCA):
+    """ MPC: with collision avoidance cost in MPC. """
+
+    def __init__(self, config: dict = None, render_mode: str | None = None):
+        super().__init__(config=config, render_mode=render_mode)
+
+        # Used for manual collision avoidance checking:
+        self.manual_collision_avoidance = False
+        self.CA_mode == "cost"
+        
+    def __str__(self):
+        return f"<Intersection-PureMpc-Env [COST]>"
+
+    def __repr__(self):
+        return super().__repr__()
+    
+    
+
+class IntersectionMpcEnv_constraint(IntersectionMpcEnv_noCA):
+    """ MPC: with collision avoidance constraint in MPC. """
+
+    def __init__(self, config: dict = None, render_mode: str | None = None):
+        super().__init__(config=config, render_mode=render_mode)
+
+        self.manual_collision_avoidance = False
+        self.CA_mode == "constraint"
+        
+    def __str__(self):
+        return f"<Intersection-PureMpc-Env [CONSTRAINT]>"
+
+    def __repr__(self):
+        return super().__repr__()

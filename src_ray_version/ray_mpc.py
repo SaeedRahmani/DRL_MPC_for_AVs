@@ -7,11 +7,14 @@ import gymnasium
 from gymnasium.envs.registration import VectorizeMode
 import ray.tune
 from highway_env.envs import (
-    IntersectionMpcrlWeightsEnv_v0, 
-    IntersectionMpcrlWeightsEnv_v1,
-    IntersectionMpcrlSpeedsEnv_v0,
-    IntersectionMpcrlSpeedsEnv_v1,
-    )
+    IntersectionMpcrlWeightsEnv_noCA, 
+    IntersectionMpcrlWeightsEnv_manual,
+    IntersectionMpcrlWeightsEnv_cost,
+    IntersectionMpcrlSpeedsEnv_noCA,
+    IntersectionMpcrlSpeedsEnv_manual,
+    IntersectionMpcrlSpeedsEnv_cost,
+    IntersectionMpcrlSpeedsEnv_constraint,
+)
 from omegaconf import DictConfig, OmegaConf
 from ray.tune.registry import register_env
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -31,10 +34,13 @@ ALGO_CONFIG_MAPPING = {
     "SAC": SACConfig,
 }
 ENV_CLASS_MAPPING = {
-    "intersection-mpcrl-dynamicweights-v0": IntersectionMpcrlWeightsEnv_v0,
-    "intersection-mpcrl-dynamicweights-v1": IntersectionMpcrlWeightsEnv_v1,
-    "intersection-mpcrl-refspeed-v0": IntersectionMpcrlSpeedsEnv_v0,
-    "intersection-mpcrl-refspeed-v1": IntersectionMpcrlSpeedsEnv_v1,
+    "intersection-mpcrl-dynamicweights-noCA": IntersectionMpcrlWeightsEnv_noCA,
+    "intersection-mpcrl-dynamicweights-manual": IntersectionMpcrlWeightsEnv_manual,
+    "intersection-mpcrl-dynamicweights-cost": IntersectionMpcrlWeightsEnv_cost,
+    "intersection-mpcrl-refspeed-noCA": IntersectionMpcrlSpeedsEnv_noCA,
+    "intersection-mpcrl-refspeed-manual": IntersectionMpcrlSpeedsEnv_manual,
+    "intersection-mpcrl-refspeed-cost": IntersectionMpcrlSpeedsEnv_cost,
+    "intersection-mpcrl-refspeed-constraint": IntersectionMpcrlSpeedsEnv_constraint,
 }
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
@@ -54,10 +60,11 @@ def train_mpcrl_agent(cfg: DictConfig):
 
     framework: str = cfg.rllib.framework # torch
     use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
-    env_version: str = cfg.env.env_version
-    subenv_version: str = cfg.env.subenv_version
-    env_class_name: str = f"intersection-mpcrl-dynamicweights-{subenv_version}" \
-                    if env_version == "v1" else f"intersection-mpcrl-refspeed-{subenv_version}"
+    
+    # env_version: str = cfg.env.env_version
+    # subenv_version: str = cfg.env.subenv_version
+    # env_class_name: str = f"intersection-mpcrl-dynamicweights-{subenv_version}" \
+    #                 if env_version == "v1" else f"intersection-mpcrl-refspeed-{subenv_version}"
                      
     algo_name: str = cfg.agent.version
     algo_parameters = cfg.agent[algo_name]

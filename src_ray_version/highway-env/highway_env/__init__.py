@@ -118,15 +118,25 @@ def _register_highway_envs():
     # intersection_mpc_env.py
     # PureMpc
 
-    # Without collision avoidance
+    # w/o collision avoidance
     register(
         id="intersection-mpc-noCA",
         entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_noCA",
     )
-    # With manual external collision avoidance
+    # w/ manual collision avoidance
     register(
         id="intersection-mpc-manual",
         entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_manual",
+    )
+    # w/ collision cost in MPC
+    register(
+        id="intersection-mpc-cost",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_cost",
+    )
+    # w/ collision avoidance in MPC
+    register(
+        id="intersection-mpc-constraint",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_constraint",
     )
     # --------------------- #
 
@@ -134,15 +144,25 @@ def _register_highway_envs():
     # intersection_mpcrl_speeds_env.py
     # MPCRL: Reference speeds
 
-    # Without collision avoidance
+    # w/o collision avoidance
     register(
         id="intersection-mpcrl-refspeed-noCA",
         entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_noCA",
     )
-    # With manual external collision avoidance
+    # w/ manual collision avoidance
     register(
         id="intersection-mpcrl-refspeed-manual",
         entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_manual",
+    )
+    # w/ collision cost in MPC
+    register(
+        id="intersection-mpcrl-refspeed-cost",
+        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_cost",
+    )
+    # w/ collision avoidance in MPC
+    register(
+        id="intersection-mpcrl-refspeed-constraint",
+        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_constraint",
     )
     # ------------------------------ #
 
@@ -150,15 +170,20 @@ def _register_highway_envs():
     # intersection_mpcrl_weights_env.py
     # MPCRL: Dynamic weights
 
-    # Without collision avoidance
+    # w/o collision avoidance
     register(
         id="intersection-mpcrl-dynamicweights-noCA",
         entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_noCA",
     )
-    # With manual external collision avoidance
+    # w/ manual collision avoidance
     register(
         id="intersection-mpcrl-dynamicweights-manual",
         entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_manual",
+    )
+    # w/ collision cost in MPC
+    register(    
+        id="intersection-mpcrl-dynamicweights-cost",
+        entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_cost",
     )
     # ------------------------------- #
 
