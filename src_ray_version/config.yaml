@@ -38,8 +38,14 @@ agent:
   SAC:
     target_network_update_freq: 32
 env:
+  # -----------------------------------------------
+  # 2 RL agent variants:
+  # refspeed (v0) or dynamicweights (v1). 
   env_version: "v1"
-  subenv_version: "v1"
+  # -----------------------------------------------
+  # 4 collision avoidance (CA) variants:
+  # noCA, manual, cost or constraint.
+  subenv_version: "manual"
   v0:
     action_dim: 1
   v1:

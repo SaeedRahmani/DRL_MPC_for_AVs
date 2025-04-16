@@ -61,10 +61,12 @@ def train_mpcrl_agent(cfg: DictConfig):
     framework: str = cfg.rllib.framework # torch
     use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
     
-    # env_version: str = cfg.env.env_version
-    # subenv_version: str = cfg.env.subenv_version
-    # env_class_name: str = f"intersection-mpcrl-dynamicweights-{subenv_version}" \
-    #                 if env_version == "v1" else f"intersection-mpcrl-refspeed-{subenv_version}"
+    env_version: str = cfg.env.env_version
+    subenv_version: str = cfg.env.subenv_version
+    env_class_name: str = f"intersection-mpcrl-dynamicweights-{subenv_version}" \
+                    if env_version == "v1" else f"intersection-mpcrl-refspeed-{subenv_version}"
+    if env_version == "v1" and subenv_version == "constraint":
+        raise ValueError("Do not implement constraint CA for dynamic weight RL agent.")
                      
     algo_name: str = cfg.agent.version
     algo_parameters = cfg.agent[algo_name]
