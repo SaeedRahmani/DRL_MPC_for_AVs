@@ -1,34 +1,23 @@
 import hydra
-import numpy as np
 import gymnasium
 import highway_env
 from pprint import pprint
 from omegaconf import DictConfig
 
-# Uncomment if you need to suppress scientific notation in numpy arrays
-# np.set_printoptions(suppress=True)
-
 
 @hydra.main(version_base=None, config_path=".", config_name="config")
 def run_mpc_agent(cfg: DictConfig):
-    """
-    Run a Model Predictive Control (MPC) agent in the highway intersection environment.
-
-    This function creates an environment with MPC controller built-in, then runs a
-    simulation where the controller automatically handles vehicle' acceleration and steering
-    through the intersection.
-
-    Args:
-        cfg (DictConfig): Configuration loaded by Hydra, containing MPC parameters
-                         in the 'mpc' section
-    """
-    # Extract MPC-specific configuration
     mpc_config = cfg.mpc
+
+    # Choose the gymnaisum env
+    assert mpc_config.CA_mode in [
+        "noCA", "manual", "cost", "constraint"], f"Invalid collision mode: {mpc_config.CA_mode}."
+    env_name = mpc_config.CA_mode
 
     # Create the environment with MPC controller built-in
     # The environment version is specified in the config file
     env = gymnasium.make(
-        f"intersection-mpc-{mpc_config.env_version}", render_mode="rgb_array")
+        f"intersection-mpc-{env_name}", render_mode="rgb_array")
     print(f"ENV: {env.unwrapped}")
 
     # Initialize the environment

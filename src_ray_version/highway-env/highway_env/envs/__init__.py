@@ -18,17 +18,17 @@ from highway_env.envs.two_way_env import TwoWayEnv
 from highway_env.envs.u_turn_env import UTurnEnv
 
 from highway_env.envs.intersection_mpc_env import (
-    IntersectionMpcEnv_v0,  # No collision avoidance
-    IntersectionMpcEnv_v1,  # With manual external collision avoidance
-    )
+    IntersectionMpcEnv_noCA,
+    IntersectionMpcEnv_manual,
+)
 from highway_env.envs.intersection_mpcrl_speeds_env import (
-    IntersectionMpcrlSpeedsEnv_v0,  # No collision avoidance
-    IntersectionMpcrlSpeedsEnv_v1,  # With manual external collision avoidance
-    )
+    IntersectionMpcrlSpeedsEnv_noCA,
+    IntersectionMpcrlSpeedsEnv_manual,
+)
 from highway_env.envs.intersection_mpcrl_weights_env import (
-    IntersectionMpcrlWeightsEnv_v0, # No collision avoidance
-    IntersectionMpcrlWeightsEnv_v1, # With manual external collision avoidance
-    )
+    IntersectionMpcrlWeightsEnv_noCA,
+    IntersectionMpcrlWeightsEnv_manual,
+)
 
 
 __all__ = [
@@ -48,12 +48,14 @@ __all__ = [
     "TwoWayEnv",
     "UTurnEnv",
     # ---------- PureMpc ---------- #
-    "IntersectionMpcEnv_v0",            # No collision avoidance
-    "IntersectionMpcEnv_v1",            # With manual external collision avoidance
+    "IntersectionMpcEnv_noCA",                  # No collision avoidance
+    "IntersectionMpcEnv_manual",              # With manual collision avoidance
+
     # ---------- MPCRL: Reference speeds ---------- #
-    "IntersectionMpcrlSpeedsEnv_v0",    # No collision avoidance
-    "IntersectionMpcrlSpeedsEnv_v1",    # With manual external collision avoidance
+    "IntersectionMpcrlSpeedsEnv_noCA",          # No collision avoidance
+    "IntersectionMpcrlSpeedsEnv_manual",      # With manual collision avoidance
+
     # ---------- MPCRL: Dynamic weights ----------- #
-    "IntersectionMpcrlWeightsEnv_v0",   # No collision avoidance
-    "IntersectionMpcrlWeightsEnv_v1",   # With manual external collision avoidance
+    "IntersectionMpcrlWeightsEnv_noCA",         # No collision avoidance
+    "IntersectionMpcrlWeightsEnv_manual",     # With manual collision avoidance
 ]

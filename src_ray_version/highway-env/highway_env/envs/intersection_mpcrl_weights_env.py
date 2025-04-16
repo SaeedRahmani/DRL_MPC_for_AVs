@@ -1,6 +1,6 @@
 from .intersection_mpc_env import (
-    IntersectionMpcEnv_v0,
-    IntersectionMpcEnv_v1,
+    IntersectionMpcEnv_noCA,
+    IntersectionMpcEnv_manual,
 )
 from highway_env.envs.common.action import (
     Action,
@@ -11,7 +11,7 @@ from highway_env.envs.common.action import (
 import numpy as np
 
 
-class IntersectionMpcrlWeightsEnv_v0(IntersectionMpcEnv_v0):
+class IntersectionMpcrlWeightsEnv_noCA(IntersectionMpcEnv_noCA):
     """ MPCRL: Dynamic weights without collision avoidance. """
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
@@ -53,7 +53,7 @@ class IntersectionMpcrlWeightsEnv_v0(IntersectionMpcEnv_v0):
         return mpc_action
 
 
-class IntersectionMpcrlWeightsEnv_v1(IntersectionMpcEnv_v1):
+class IntersectionMpcrlWeightsEnv_manual(IntersectionMpcEnv_manual):
     """ MPCRL: Dynamic weights with manual external collision avoidance. """
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)

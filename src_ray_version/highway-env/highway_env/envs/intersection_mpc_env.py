@@ -18,7 +18,7 @@ from highway_env.envs.common.abstract import Observation
 from utils.vehicle import Vehicle
 
 
-class IntersectionMpcEnv_v0(IntersectionEnv):
+class IntersectionMpcEnv_noCA(IntersectionEnv):
     """ MPC: without collision avoidance. """
 
     def __init__(self, config: dict = None, render_mode: str | None = None):
@@ -30,6 +30,7 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
 
         # Collision avoidance disable by default
         self.manual_collision_avoidance = False
+        self.CA_mode = "noCA"
         
         self.weight_components = [
             "state",
@@ -267,7 +268,8 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
              for trajectory_point in self.reference_trajectory]
         )
 
-        if self.manual_collision_avoidance:
+        # if self.manual_collision_avoidance:
+        if self.CA_mode == "manual":
             # Generate new reference states, given the result of collision detection
             ref = self.update_reference_states(
                 speed_override=self.speed_override,
@@ -289,7 +291,9 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
         control_cost = 0
         input_diff_cost = 0
         final_state_cost = 0
-        if self.manual_collision_avoidance:
+
+        # if self.manual_collision_avoidance:
+        if self.CA_mode == "manual":
             distance_cost = 0
             collision_cost = 0
 
@@ -322,7 +326,8 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
                 input_diff_cost += 0.01 * \
                     ((u[0, k] - u[0, k-1])**2 + (u[1, k] - u[1, k-1])**2)
 
-            if not self.manual_collision_avoidance:
+            # if not self.manual_collision_avoidance:
+            if self.CA_mode == "cost":
                 for other_vehicle in self.agent_vehicles_mpc:
                     dist = ca.norm_2(x[:2, k] - other_vehicle.position)
                     # in casadi, use ca.if_else to branch
@@ -357,7 +362,8 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
             input_diff_cost * weights_dict["weight_input_diff"]
             # final_state_cost * weights_dict["weight_final_state"]
         )
-        if self.manual_collision_avoidance:
+        # if self.manual_collision_avoidance:
+        if self.CA_mode == "manual" or self.CA_mode == "cost":
             total_cost += (
                 distance_cost * weights_dict["weight_distance"] +
                 collision_cost * weights_dict["weight_collision"]
@@ -604,7 +610,7 @@ class IntersectionMpcEnv_v0(IntersectionEnv):
             
         return new_reference_states
 
-class IntersectionMpcEnv_v1(IntersectionMpcEnv_v0):
+class IntersectionMpcEnv_manual(IntersectionMpcEnv_noCA):
     """ MPC: with manual collision avoidance. """
 
     def __init__(self, config: dict = None, render_mode: str | None = None):
@@ -612,6 +618,7 @@ class IntersectionMpcEnv_v1(IntersectionMpcEnv_v0):
 
         # Used for manual collision avoidance checking:
         self.manual_collision_avoidance = True
+        self.CA_mode == "manual"
         self.weight_components.append("collision")
         self.weight_components.append("distance")
 

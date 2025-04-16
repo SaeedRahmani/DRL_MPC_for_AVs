@@ -120,13 +120,13 @@ def _register_highway_envs():
 
     # Without collision avoidance
     register(
-        id="intersection-mpc-v0",
-        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_v0",
+        id="intersection-mpc-noCA",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_noCA",
     )
     # With manual external collision avoidance
     register(
-        id="intersection-mpc-v1",
-        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_v1",
+        id="intersection-mpc-manual",
+        entry_point="highway_env.envs.intersection_mpc_env:IntersectionMpcEnv_manual",
     )
     # --------------------- #
 
@@ -136,13 +136,13 @@ def _register_highway_envs():
 
     # Without collision avoidance
     register(
-        id="intersection-mpcrl-refspeed-v0",
-        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_v0",
+        id="intersection-mpcrl-refspeed-noCA",
+        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_noCA",
     )
     # With manual external collision avoidance
     register(
-        id="intersection-mpcrl-refspeed-v1",
-        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_v1",
+        id="intersection-mpcrl-refspeed-manual",
+        entry_point="highway_env.envs.intersection_mpcrl_speeds_env:IntersectionMpcrlSpeedsEnv_manual",
     )
     # ------------------------------ #
 
@@ -152,13 +152,13 @@ def _register_highway_envs():
 
     # Without collision avoidance
     register(
-        id="intersection-mpcrl-dynamicweights-v0",
-        entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_v0",
+        id="intersection-mpcrl-dynamicweights-noCA",
+        entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_noCA",
     )
     # With manual external collision avoidance
     register(
-        id="intersection-mpcrl-dynamicweights-v1",
-        entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_v1",
+        id="intersection-mpcrl-dynamicweights-manual",
+        entry_point="highway_env.envs.intersection_mpcrl_weights_env:IntersectionMpcrlWeightsEnv_manual",
     )
     # ------------------------------- #
 

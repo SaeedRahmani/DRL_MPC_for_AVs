@@ -1,6 +1,6 @@
 from .intersection_mpc_env import (
-    IntersectionMpcEnv_v0,
-    IntersectionMpcEnv_v1,
+    IntersectionMpcEnv_noCA,
+    IntersectionMpcEnv_manual,
 )
 from highway_env.envs.common.action import (
     Action,
@@ -11,7 +11,7 @@ from highway_env.envs.common.action import (
 import numpy as np
 
 
-class IntersectionMpcrlSpeedsEnv_v0(IntersectionMpcEnv_v0):
+class IntersectionMpcrlSpeedsEnv_noCA(IntersectionMpcEnv_noCA):
     """ MPCRL: Reference speed without collision avoidance. """
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
@@ -50,7 +50,7 @@ class IntersectionMpcrlSpeedsEnv_v0(IntersectionMpcEnv_v0):
         mpc_action = self._solve_mpc(weights=None, ref_speed=ref_speed)
         return mpc_action
 
-class IntersectionMpcrlSpeedsEnv_v1(IntersectionMpcEnv_v1):
+class IntersectionMpcrlSpeedsEnv_manual(IntersectionMpcEnv_manual):
     """ MPCRL: Reference speed with manual external collision avoidance. """
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
