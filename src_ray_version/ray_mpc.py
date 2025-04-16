@@ -1,9 +1,8 @@
-import os 
 import logging
 import ray
 import ray.tune as tune
 import hydra
-import gymnasium
+# import gymnasium
 from gymnasium.envs.registration import VectorizeMode
 import ray.tune
 from highway_env.envs import (
@@ -26,7 +25,7 @@ from ray.tune.logger import (
 )
 from ray.tune import TuneConfig, RunConfig, CLIReporter
 from ray.tune.schedulers import ASHAScheduler
-from pprint import pp
+from pprint import pprint
 
 
 ALGO_CONFIG_MAPPING = {
@@ -56,7 +55,7 @@ def train_mpcrl_agent(cfg: DictConfig):
         include_dashboard=False,
     )
 
-    # pp(ray.available_resources())
+    pprint(ray.available_resources())
 
     framework: str = cfg.rllib.framework # torch
     use_rllib_new_API_stack: bool = cfg.rllib.use_new_API_stack
@@ -81,11 +80,13 @@ def train_mpcrl_agent(cfg: DictConfig):
     )
 
     # Create a Env instance first to register the environment
-    env = ENV_CLASS_MAPPING[env_class_name](config=None, render_mode="rgb_array")
-    print(f"ENV: {env.unwrapped}", 
-        #   {env.unwrapped.action_space}, 
-        #   {env.unwrapped.observation_space}
-          )
+    env = ENV_CLASS_MAPPING[env_class_name](config=None, render_mode="rgb_array", action_dim=cfg.env[env_version]["action_dim"])
+    default_config = env.default_config()
+    action_type = default_config["action"]["type"]
+
+    print(f"ENV: {env}")
+    print(f"{action_type} space: {env.action_space.shape}")
+    pprint(env.default_weights)
 
     config = (
         algo_config_class()
@@ -191,7 +192,7 @@ def train_mpcrl_agent(cfg: DictConfig):
         tune_config=TuneConfig(
             ),
         run_config=RunConfig(
-            storage_path="~/DEV/XZL",
+            storage_path=cfg.rllib.storage_path,
             name=f"{cfg.agent.version}",
             callbacks=[TBXLoggerCallback(), CSVLoggerCallback(), JsonLoggerCallback()],
             stop={
@@ -205,8 +206,7 @@ def train_mpcrl_agent(cfg: DictConfig):
             ),
         )
         results = tuner.fit()
-        from pprint import pp
-        pp(results._results[0])
+        pprint(results._results)
     else:
         # define param space
         param_space = config.to_dict()
@@ -228,12 +228,13 @@ def train_mpcrl_agent(cfg: DictConfig):
             verbose=1,
         )
         # paramenter tuning
-        tune.Tuner(
+        result = tune.Tuner(
             trainable=cfg.agent.version,
             param_space=param_space,
             tune_config=tune_config,
             run_config=run_config,
         ).fit()
+        pprint(result._results)
 
     ray.shutdown()
 

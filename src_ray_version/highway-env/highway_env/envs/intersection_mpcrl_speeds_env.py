@@ -4,19 +4,22 @@ from .intersection_mpc_env import (
     IntersectionMpcEnv_cost,
     IntersectionMpcEnv_constraint,
 )
-from highway_env.envs.common.action import (
-    Action,
-    PureMpcAction,
-    DynamicWeightsAction,
-    ReferenceSpeedAction,
-)
-import numpy as np
+from highway_env.envs.common.action import Action
 
 
 class IntersectionMpcrlSpeedsEnv_noCA(IntersectionMpcEnv_noCA):
     """ MPCRL: Reference speed without collision avoidance. """
-    def __init__(self, config: dict = None, render_mode: str | None = None):
+
+    def __init__(self, config: dict = None, render_mode: str | None = None, action_dim: int = 1):
         super().__init__(config=config, render_mode=render_mode)
+        self.action_dim = action_dim
+        self.config["action"]["num_reference_points"] = self.action_dim
+        self.define_spaces()
+        
+        self.CA_mode = "noCA"
+        assert self.CA_mode == "noCA", "Expect CA mode to be `noCA`."
+        self.agent_mode = "MPC-RL<Reference speed>"
+        assert self.agent_mode == "MPC-RL<Reference speed>", "Expect agent mode to be `MPC-RL<Reference speed>`."
 
     @classmethod
     def default_config(cls) -> dict:
@@ -24,38 +27,27 @@ class IntersectionMpcrlSpeedsEnv_noCA(IntersectionMpcEnv_noCA):
         config.update(
             {
                 "action": {
-                    "type": "ReferenceSpeedAction",  # use 6 to predict 30, optimal: 16
+                    "type": "ReferenceSpeedAction",
+                    "num_reference_points": 1,
                 },
             }
         )
         return config
 
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <REF SPEEDS> [NO CA]>"
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def _predict_mpc_action(self, action: Action) -> Action:
-        """ Predict the action of ego vehicle using MPC. """
-        self._prepare_obs()
-
-        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
-        steps_per_speed = 33  # Change speed every 33 steps
-        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
-            self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (
-                self.current_speed_idx + 1) % len(test_speeds)
-
-        # the dynamic weights are used from RL agent.
-        ref_speed = action
-        mpc_action = self._solve_mpc(weights=None, ref_speed=ref_speed)
-        return mpc_action
 
 class IntersectionMpcrlSpeedsEnv_manual(IntersectionMpcEnv_manual):
     """ MPCRL: Reference speed with manual collision avoidance. """
-    def __init__(self, config: dict = None, render_mode: str | None = None):
+
+    def __init__(self, config: dict = None, render_mode: str | None = None, action_dim: int = 1):
         super().__init__(config=config, render_mode=render_mode)
+        self.action_dim = action_dim
+        self.config["action"]["num_reference_points"] = self.action_dim
+        self.define_spaces()
+
+        self.CA_mode = "manual"
+        assert self.CA_mode == "manual", "Expect CA mode to be `manual`."
+        self.agent_mode = "MPC-RL<Reference speed>"
+        assert self.agent_mode == "MPC-RL<Reference speed>", "Expect agent mode to be `MPC-RL<Reference speed>`."
 
     @classmethod
     def default_config(cls) -> dict:
@@ -64,21 +56,25 @@ class IntersectionMpcrlSpeedsEnv_manual(IntersectionMpcEnv_manual):
             {
                 "action": {
                     "type": "ReferenceSpeedAction",  # use 6 to predict 30, optimal: 16
+                    "num_reference_points": 1,
                 },
             }
         )
         return config
-    
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <REF SPEEDS> [MANUAL]>"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-    
+
+
 class IntersectionMpcrlSpeedsEnv_cost(IntersectionMpcEnv_cost):
     """ MPCRL: Reference speed with collision cost in MPC. """
-    def __init__(self, config: dict = None, render_mode: str | None = None):
+
+    def __init__(self, config: dict = None, render_mode: str | None = None, action_dim: int = 1):
         super().__init__(config=config, render_mode=render_mode)
+        self.action_dim = action_dim
+        self.config["action"]["num_reference_points"] = self.action_dim
+        self.define_spaces()
+        
+        self.CA_mode = "cost"
+        assert self.CA_mode == "cost", "Expect CA mode to be `cost`."
+        self.agent_mode = "MPC-RL<Reference speed>"
 
     @classmethod
     def default_config(cls) -> dict:
@@ -86,23 +82,23 @@ class IntersectionMpcrlSpeedsEnv_cost(IntersectionMpcEnv_cost):
         config.update(
             {
                 "action": {
-                    "type": "ReferenceSpeedAction",  # use 6 to predict 30, optimal: 16
+                    "type": "ReferenceSpeedAction",
+                    "num_reference_points": 1,
                 },
             }
         )
         return config
-    
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <REF SPEEDS> [COST]>"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-    
-    
+
+
 class IntersectionMpcrlSpeedsEnv_constraint(IntersectionMpcEnv_constraint):
-    """ MPCRL: Reference speed with  collision avoidance constraint in MPC. """
+    """ MPCRL: Reference speed with collision avoidance constraint in MPC. """
+
     def __init__(self, config: dict = None, render_mode: str | None = None):
         super().__init__(config=config, render_mode=render_mode)
+        self.CA_mode = "constraint"
+        assert self.CA_mode == "constraint", "Expect CA mode to be `constraint`."
+        self.agent_mode = "MPC-RL<Reference speed>"
+        assert self.agent_mode == "MPC-RL<Reference speed>", "Expect agent mode to be `MPC-RL<Reference speed>`."
 
     @classmethod
     def default_config(cls) -> dict:
@@ -110,14 +106,9 @@ class IntersectionMpcrlSpeedsEnv_constraint(IntersectionMpcEnv_constraint):
         config.update(
             {
                 "action": {
-                    "type": "ReferenceSpeedAction",  # use 6 to predict 30, optimal: 16
+                    "type": "ReferenceSpeedAction",
+                    "num_reference_points": 1,
                 },
             }
         )
         return config
-    
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <REF SPEEDS> [CONSTRAINT]>"
-    
-    def __repr__(self) -> str:
-        return self.__str__()

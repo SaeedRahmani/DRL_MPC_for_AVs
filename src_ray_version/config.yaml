@@ -1,5 +1,6 @@
 rllib:
   enable_tuner: false
+  storage_path: "~/DEV/ray_results"
   framework: "torch"
   use_new_API_stack: False      # using old stack for now
   num_gpus: 1
@@ -7,6 +8,7 @@ rllib:
                                 # Otherwise, `Algorithm.training_step()` runs in the main program (driver).
   num_env_runners: 10
   num_cpus_per_env_runner: 1
+
 agent:
   version: "PPO"                # "PPO" or "SAC"  
   # training
@@ -45,13 +47,21 @@ env:
   # -----------------------------------------------
   # 4 collision avoidance (CA) variants:
   # noCA, manual, cost or constraint.
-  subenv_version: "manual"
+  subenv_version: "noCA"
+  # -----------------------------------------------
+  # ReferenceSpeedAction
+  # For now, we use constant speed for the reference speed.
+  # In future, other version may support variable speed.
   v0:
     action_dim: 1
+  # -----------------------------------------------
+  # DynamicWeightsAction
   v1:
-    action_dim: 5
-
+    action_dim: 18
 mpc:
+  # -----------------------------------------------
+  # action: acceleration, and steering.
+  action_dim: 2
   # -----------------------------------------------
   # 4 collision avoidance (CA) variants:
   # noCA, manual, cost or constraint.

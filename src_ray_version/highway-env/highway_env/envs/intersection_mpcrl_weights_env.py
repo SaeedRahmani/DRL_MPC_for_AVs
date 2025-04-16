@@ -3,19 +3,22 @@ from .intersection_mpc_env import (
     IntersectionMpcEnv_manual,
     IntersectionMpcEnv_cost,
 )
-from highway_env.envs.common.action import (
-    Action,
-    PureMpcAction,
-    DynamicWeightsAction,
-    ReferenceSpeedAction,
-)
+from highway_env.envs.common.action import Action
 import numpy as np
 
 
 class IntersectionMpcrlWeightsEnv_noCA(IntersectionMpcEnv_noCA):
     """ MPCRL: Dynamic weights without collision avoidance. """
-    def __init__(self, config: dict = None, render_mode: str | None = None):
+
+    def __init__(self, config: dict = None, render_mode: str | None = None, action_dim: int = 7):
         super().__init__(config=config, render_mode=render_mode)
+        self.action_dim = action_dim
+        self.config["action"]["num_weights"] = self.action_dim
+        self.define_spaces()
+
+        self.CA_mode = "noCA"
+        assert self.CA_mode == "noCA", "Expect CA mode to be `noCA`."
+        self.agent_mode = "MPC-RL<Dynamic weights>"
 
     @classmethod
     def default_config(cls) -> dict:
@@ -24,91 +27,61 @@ class IntersectionMpcrlWeightsEnv_noCA(IntersectionMpcEnv_noCA):
             {
                 "action": {
                     "type": "DynamicWeightsAction",
-                    "num_weights": 6,
+                    "num_weights": 7,
                 },
             }
         )
         return config
 
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <DYNAMIC WEIGHTS> [NO CA]>"
-
-    def __repr__(self) -> str:
-        return self.__str__()
-
-    def _predict_mpc_action(self, action: Action) -> Action:
-        """ Predict the action of ego vehicle using MPC. """
-        self._prepare_obs()
-
-        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
-        steps_per_speed = 33  # Change speed every 33 steps
-        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
-            self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (
-                self.current_speed_idx + 1) % len(test_speeds)
-
-        # the dynamic weights are used from RL agent.
-        weights = action
-        mpc_action = self._solve_mpc(
-            weights=weights, ref_speed=np.array([[self.ref_speed]]))
-        return mpc_action
-
 
 class IntersectionMpcrlWeightsEnv_manual(IntersectionMpcEnv_manual):
     """ MPCRL: Dynamic weights with manual external collision avoidance. """
-    def __init__(self, config: dict = None, render_mode: str | None = None):
+
+    def __init__(self, config: dict = None, render_mode: str | None = None, action_dim: int = 7):
         super().__init__(config=config, render_mode=render_mode)
-        self.CA_mode = "noCA"
+        self.action_dim = action_dim
+        self.config["action"]["num_weights"] = self.action_dim
+        self.define_spaces()
+        self.CA_mode = "manual"
+        assert self.CA_mode == "manual", "Expect CA mode to be `manual`."
+        self.agent_mode = "MPC-RL<Dynamic weights>"
 
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <DYNAMIC WEIGHTS> [MANUAL]>"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-    
-    def _predict_mpc_action(self, action: Action) -> Action:
-        """ Predict the action of ego vehicle using MPC. """
-        self._prepare_obs()
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "action": {
+                    "type": "DynamicWeightsAction",
+                    "num_weights": 7,
+                },
+            }
+        )
+        return config
 
-        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
-        steps_per_speed = 33  # Change speed every 33 steps
-        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
-            self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (
-                self.current_speed_idx + 1) % len(test_speeds)
 
-        # the dynamic weights are used from RL agent.
-        weights = action
-        mpc_action = self._solve_mpc(
-            weights=weights, ref_speed=np.array([[self.ref_speed]]))
-        return mpc_action
-    
 class IntersectionMpcrlWeightsEnv_cost(IntersectionMpcEnv_cost):
     """ MPCRL: Dynamic weights with collision avoidance cost in MPC. """
-    def __init__(self, config: dict = None, render_mode: str | None = None):
+    agent_mode = "MPC-RL<Dynamic weights>"
+
+    def __init__(self, config: dict = None, render_mode: str | None = None, action_dim: int = 7):
         super().__init__(config=config, render_mode=render_mode)
+        self.action_dim = action_dim
+        self.config["action"]["num_weights"] = self.action_dim
+        self.define_spaces()
         self.CA_mode == "cost"
-    
-    def __str__(self) -> str:
-        return f"<Intersection-MpcRL-Env <DYNAMIC WEIGHTS> [COST]>"
-    
-    def __repr__(self) -> str:
-        return self.__str__()
-    
-    def _predict_mpc_action(self, action: Action) -> Action:
-        """ Predict the action of ego vehicle using MPC. """
-        self._prepare_obs()
+        assert self.CA_mode == "cost", "Expect CA mode to be `cost`."
+        self.agent_mode = "MPC-RL<Dynamic weights>"
 
-        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
-        steps_per_speed = 33  # Change speed every 33 steps
-        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
-            self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (
-                self.current_speed_idx + 1) % len(test_speeds)
-
-        # the dynamic weights are used from RL agent.
-        weights = action
-        mpc_action = self._solve_mpc(
-            weights=weights, ref_speed=np.array([[self.ref_speed]]))
-        return mpc_action
-    
+    @classmethod
+    def default_config(cls) -> dict:
+        config = super().default_config()
+        config.update(
+            {
+                "action": {
+                    "type": "DynamicWeightsAction",
+                    "num_weights": 7,
+                },
+            }
+        )
+        return config

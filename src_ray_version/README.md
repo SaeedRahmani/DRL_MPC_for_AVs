@@ -4,10 +4,20 @@
 
 ## TODO
 
-- [ ] Manual MPC is not working
+- [ ] Cannot specify action space whether creating envs using cfg.
+- [ ] Manual MPC is unsure whether it is working
 - [ ] Check the if-statement w/ Saeed.
   - [ ] What else constraint components do we consider or not?
   - [ ] Add collision constraints in MPC (TODO)
+- [ ] V1 MPCRL Agent
+  - [x] Current use action_dim = 7, including all the weight components, 
+  - [ ] **Issue is that it may conflict with noCA, but can omit the exceeding weights.**
+- [ ] V0 MPCRL Agent
+  - [x] Only use the action_dim = 1.
+  - [ ] Boundary of the action? I find it succeed with random action of ref speed.
+  - [ ] action_dim = 6 to interpolate
+  - [ ] action_dim = 16 to cover the whole future reference states.
+
 
 ## Environments
 
@@ -66,18 +76,24 @@
   </tr>
 </table>
 
-## Train MPC-RL agents (using 2nd-gen `RLlib` API stack)
-
-1. Check the configuration file to specify the `env_version`;
-2. Run `python ray_mpc.py`;
-
 ## Run MPC agents
 
-1. Check the configuration file to specify the `env_version` to use (`"intersection-mpc` `-v0` or `-v1`);
+1. Check the configuration file to specify the `CA_mode` (options include `noCA`, `manual`, `cost` or `constraint`);
 2. Run `python run_mpc.py`;
-3. Observations:
+<!-- 3. Observations of behaviors:
     - `v0` is more aggressive;
-    - `v1` is more conservation because of the avoidance collision checking.
+    - `v1` is more conservation because of the avoidance collision checking. -->
+
+## Train MPC-RL agents
+
+1. Check the configuration file to specify 
+  - `env_version`: `"v0"` or `"v1"`; 
+  - `sub_env_version`: options include `noCA`, `manual`, `cost` or `constraint`;
+2. Run `python ray_mpc.py`;
+
+## Test MPC-RL agents 
+
+1. Run `python test_mpcrl.py`;
 
 ## Local installation
 

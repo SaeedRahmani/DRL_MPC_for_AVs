@@ -1,7 +1,7 @@
 import hydra
 import gymnasium
 import highway_env
-from pprint import pprint
+from pprint import pp
 from omegaconf import DictConfig
 
 
@@ -18,28 +18,31 @@ def run_mpc_agent(cfg: DictConfig):
     # The environment version is specified in the config file
     env = gymnasium.make(
         f"intersection-mpc-{env_name}", render_mode="rgb_array")
-    print(f"ENV: {env.unwrapped}")
+    default_config = env.unwrapped.default_config()
+    action_type = default_config["action"]["type"]
 
+    print(f"ENV: {env.unwrapped}")
+    print(f"{action_type} space: {env.action_space.shape}")
+    pp(env.unwrapped.default_weights)
     # Initialize the environment
     _, _ = env.reset()
 
     # Run simulation for up to 200 steps
     for i in range(200):
+        # ! NOTICE !
         # For MPC environments, the action passed here is essentially ignored.
+        # 
         # The actual control actions are computed internally by the MPC controller
         # during the environment's step function execution.
+        # 
         # The action cannot be set to None, since the wrapper will replace a dummt value.
         _, reward, terminated, truncated, info = env.step(
             action=env.action_space.sample())
 
-        # Render the current state
         env.render()
-
-        # End the episode if terminated or truncated
         if terminated or truncated:
             break
 
-    # Clean up environment resources
     env.close()
 
 

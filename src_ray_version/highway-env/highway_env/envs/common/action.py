@@ -365,6 +365,7 @@ class ReferenceSpeedAction(PureMpcAction):
     def __init__(
         self,
         env: AbstractEnv,
+        num_reference_points: int,
         acceleration_range: tuple[float, float] | None = None,
         steering_range: tuple[float, float] | None = None,
         speed_range: tuple[float, float] | None = None,
@@ -384,9 +385,10 @@ class ReferenceSpeedAction(PureMpcAction):
             dynamical=dynamical, 
             clip=clip,
         )
+        self.num_reference_points = num_reference_points
 
     def space(self) -> spaces.Box:
-        return spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
+        return spaces.Box(-1.0, 1.0, shape=(self.num_reference_points,), dtype=np.float32)
 
 class DynamicWeightsAction(PureMpcAction):
     def __init__(
