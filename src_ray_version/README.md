@@ -4,15 +4,15 @@
 
 ## TODO
 
-- [ ] Cannot specify action space whether creating envs using cfg.
+- [x] Can specify action space whether creating envs using cfg.
 - [ ] Manual MPC is unsure whether it is working
 - [ ] Check the if-statement w/ Saeed.
   - [ ] What else constraint components do we consider or not?
   - [ ] Add collision constraints in MPC (TODO)
-- [ ] V1 MPCRL Agent
+- [x] V1 MPCRL Agent
   - [x] Current use action_dim = 7, including all the weight components, 
-  - [ ] **Issue is that it may conflict with noCA, but can omit the exceeding weights.**
-- [ ] V0 MPCRL Agent
+  - [x] **Issue is that it may conflict with noCA, but can omit the exceeding weights.**
+- [x] V0 MPCRL Agent
   - [x] Only use the action_dim = 1.
   - [ ] Boundary of the action? I find it succeed with random action of ref speed.
   - [ ] action_dim = 6 to interpolate
@@ -89,7 +89,7 @@
 1. Check the configuration file to specify 
   - `env_version`: `"v0"` or `"v1"`; 
   - `sub_env_version`: options include `noCA`, `manual`, `cost` or `constraint`;
-2. Run `python ray_mpc.py`;
+2. Run `python train_mpcrl.py`;
 
 ## Test MPC-RL agents 
 

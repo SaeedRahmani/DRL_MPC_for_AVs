@@ -1,3 +1,9 @@
+# ------------------------
+## disable the logging in outputs folder.
+# hydra:
+#   output_subdir: null
+#   run:
+#     dir: .
 rllib:
   enable_tuner: false
   storage_path: "~/DEV/ray_results"

@@ -196,7 +196,7 @@ def train_mpcrl_agent(cfg: DictConfig):
             name=f"{cfg.agent.version}",
             callbacks=[TBXLoggerCallback(), CSVLoggerCallback(), JsonLoggerCallback()],
             stop={
-                "training_iteration": 2
+                "training_iteration": 1
             },
             # 0 = silent, 
             # 1 = default (display result table for the last iteration), 
@@ -205,8 +205,8 @@ def train_mpcrl_agent(cfg: DictConfig):
             # progress_reporter=reporter,
             ),
         )
-        results = tuner.fit()
-        pprint(results._results)
+        result = tuner.fit()
+        pprint(result[-1].metrics)
     else:
         # define param space
         param_space = config.to_dict()
@@ -223,7 +223,7 @@ def train_mpcrl_agent(cfg: DictConfig):
         # set run config
         run_config = RunConfig(
             name=f"{cfg.agent.version}_tuning",
-            storage_path="~/ray_results",
+            storage_path="./ray_results",
             stop={"env_runners/episode_reward_mean": 200},  # stop condition
             verbose=1,
         )
@@ -234,7 +234,7 @@ def train_mpcrl_agent(cfg: DictConfig):
             tune_config=tune_config,
             run_config=run_config,
         ).fit()
-        pprint(result._results)
+        pprint(result[-1].metrics)
 
     ray.shutdown()
 
