@@ -23,6 +23,7 @@ def run_mpc_agent(cfg: DictConfig):
 
     print(f"ENV: {env.unwrapped}")
     print(f"{action_type} space: {env.action_space.shape}")
+    pp(env.unwrapped.default_config())
     pp(env.unwrapped.default_weights)
     # Initialize the environment
     _, _ = env.reset()

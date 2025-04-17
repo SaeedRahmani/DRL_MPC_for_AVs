@@ -5,7 +5,7 @@
 ## TODO
 
 - [x] Can specify action space whether creating envs using cfg.
-- [ ] Manual MPC is unsure whether it is working
+- [ ] Manual MPC is unsure whether it is working (config not working in original version, BUG)
 - [ ] Check the if-statement w/ Saeed.
   - [ ] What else constraint components do we consider or not?
   - [ ] Add collision constraints in MPC (TODO)

@@ -91,13 +91,12 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
                     "steering_range": [-np.pi / 4, np.pi / 4],
                 },
                 # vehicle spawning
-                "vehicles_count": 10,
-                "initial_vehicle_count": 5,
-                "spawn_probability": 0.3,
+                "initial_vehicle_count": 10,
+                "spawn_probability": 0.6,
                 # time
-                "duration": 200,            # [s]
-                "policy_frequency": 10,
-                "simulation_frequency": 30,
+                "duration": 13,            # [s]
+                "policy_frequency": 1, # 10,
+                "simulation_frequency": 15, # 30,
                 # rendering
                 "scaling": 3,
                 "screen_width": 600,
@@ -368,6 +367,9 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
                 for other_vehicle in self.agent_vehicles_mpc:
                     other_vehicle.position = self.other_vehicle_model(
                         other_vehicle, self.dt)
+            elif self.CA_mode == "manual":
+                collision_cost = 0
+                distance_cost = 0
 
         # final state cost
         ref_traj_index = min(closest_index + N, ref.shape[0] - 1)
@@ -384,9 +386,10 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             control_cost * weights_dict["weight_control"] +
             input_diff_cost * weights_dict["weight_input_diff"]
             # final_state_cost * weights_dict["weight_final_state"]
-        )
+        )            
+
         # if self.manual_collision_avoidance:
-        if self.CA_mode == "manual" or self.CA_mode == "cost":
+        if self.CA_mode == "cost":
             total_cost += (
                 distance_cost * weights_dict["weight_distance"] +
                 collision_cost * weights_dict["weight_collision"]
@@ -895,9 +898,9 @@ class IntersectionMpcEnv_manual(IntersectionMpcEnv_noCA):
             "speed",
             "control",
             "input_diff",
-            "distance",
-            "collision",
-            "final_state"
+            # "distance",
+            # "collision",
+            # "final_state"
         ]
         self.all_default_weights = {
             "weight_speed": 1,

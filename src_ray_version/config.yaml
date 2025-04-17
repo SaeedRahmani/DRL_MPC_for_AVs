@@ -71,7 +71,7 @@ mpc:
   # -----------------------------------------------
   # 4 collision avoidance (CA) variants:
   # noCA, manual, cost or constraint.
-  CA_mode: "constraint"       
+  CA_mode: "manual"       
   # -----------------------------------------------
   # Collision avoidance parameters:
   ttc_threshold: 3        # unit: second 

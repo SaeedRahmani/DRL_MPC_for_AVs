@@ -2,7 +2,7 @@ import gymnasium as gym
 import highway_env
 import hydra
 import numpy as np
-
+from pprint import pprint
 from agents.pure_mpc import PureMPC_Agent
 from config.config import build_env_config, build_pure_mpc_agent_config
 
@@ -16,10 +16,12 @@ def test_pure_mpc_agent(cfg):
 
     # env
     env = gym.make("intersection-v1", render_mode="rgb_array", config=gym_env_config)
+    pprint(env.unwrapped.default_config())
     
     # agent
     mpc_agent = PureMPC_Agent(env, pure_mpc_agent_config)
-
+    pprint(mpc_agent.default_weights)
+    
     observation, _ = env.reset()
     
     # print(env.unwrapped.road.network.graph['o0']['ir0'][0].start)
