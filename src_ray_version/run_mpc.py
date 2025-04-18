@@ -18,12 +18,12 @@ def run_mpc_agent(cfg: DictConfig):
     # The environment version is specified in the config file
     env = gymnasium.make(
         f"intersection-mpc-{env_name}", render_mode="rgb_array")
-    default_config = env.unwrapped.default_config()
+    default_config = env.unwrapped.config
     action_type = default_config["action"]["type"]
 
     print(f"ENV: {env.unwrapped}")
     print(f"{action_type} space: {env.action_space.shape}")
-    pp(env.unwrapped.default_config())
+    pp(env.unwrapped.config)
     pp(env.unwrapped.default_weights)
     # Initialize the environment
     _, _ = env.reset()

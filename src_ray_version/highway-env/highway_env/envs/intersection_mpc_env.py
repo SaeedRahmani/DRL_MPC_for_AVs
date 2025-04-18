@@ -4,7 +4,7 @@ import highway_env
 import casadi as ca
 from shapely import LineString
 from shapely.errors import GEOSException
-
+import pandas as pd
 from highway_env.envs import IntersectionEnv
 from highway_env.envs.common.action import Action
 from highway_env.envs.common.abstract import Observation
@@ -25,7 +25,8 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         # Collision avoidance disable by default
         self.manual_collision_avoidance = False
         self.CA_mode = "noCA"
-        assert self.CA_mode == "noCA", "Expect CA mode to be `noCA`."
+        self.is_collide = False
+        # assert self.CA_mode == "noCA", "Expect CA mode to be `noCA`."
         self.agent_mode = "Pure_MPC"
 
         self.weight_components = [
@@ -95,8 +96,8 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
                 "spawn_probability": 0.6,
                 # time
                 "duration": 13,            # [s]
-                "policy_frequency": 1, # 10,
-                "simulation_frequency": 15, # 30,
+                "policy_frequency": 10,      # 10,
+                "simulation_frequency": 30, # 30,
                 # rendering
                 "scaling": 3,
                 "screen_width": 600,
@@ -187,7 +188,6 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
 
         # MPCRL
         mpc_action = self._predict_mpc_action(action)
-        # print(mpc_action)
 
         for frame in range(frames):
             # Forward action to the vehicle
@@ -232,14 +232,14 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
 
         if self.agent_mode == "Pure_MPC":
             mpc_action = self._solve_mpc(
-                weights=None, ref_speed=np.array([[self.ref_speed]]))
+                weights=None, ref_speed=None)
         elif self.agent_mode == "MPC-RL<Reference speed>":
             ref_speed = action
             mpc_action = self._solve_mpc(weights=None, ref_speed=np.array([[ref_speed]]))
         elif self.agent_mode == "MPC-RL<Dynamic weights>":
             weights = action
             mpc_action = self._solve_mpc(
-                weights=weights, ref_speed=np.array([[self.ref_speed]]))
+                weights=weights, ref_speed=None)
         else:
             raise ValueError(
                 f"Wrong agent mode received: `{self.agent_mode}`.")
@@ -296,6 +296,7 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             ref = self.update_reference_states(
                 speed_override=self.speed_override,
                 speed_overide_from_RL=ref_speed)
+            
         else:
             # Update reference speed from RL if provided
             ref = np.copy(self.reference_states)
@@ -332,11 +333,16 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             para_deviation = dx * \
                 ca.cos(ref_heading) + dy * ca.sin(ref_heading)
 
+            speed_weight = weights_dict["weight_speed"]
+            if self.is_collide:
+                speed_weight = 100
+
             # State cost
             state_cost += (
                 4 * perp_deviation**2 +
                 2 * para_deviation**2 +
-                weights_dict["weight_speed"] * (x[3, k] - ref_v)**2 +
+                speed_weight * (x[3, k] - ref_v)**2 +
+                # weights_dict["weight_speed"] * (x[3, k] - ref_v)**2 +
                 0.5 * (x[2, k] - ref_heading)**2
             )
 
@@ -604,11 +610,9 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             safe_speed = np.clip(
                 speed_overide_from_RL[0, 0], 0, DEFAULT_MAX_SPEED)
             new_ref[:, 2] = safe_speed
-            # print('Using RL speed override')
             return new_ref
 
         if not self.is_collide:
-            # print('Using no collision avoidance')
             return np.copy(self.reference_states)
 
         new_reference_states = np.copy(self.reference_states)
@@ -622,7 +626,6 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             idx for idx in conflict_indices if idx is not None]
 
         if not valid_conflict_indices:
-            print('No valid conflict indices')
             return new_reference_states
 
         earliest_conflict_index = min(valid_conflict_indices)
@@ -641,7 +644,6 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             new_reference_states[stop_index:, 2] = 0.0
             self.stop_point = self.reference_trajectory[stop_index]
             self.last_valid_stop_point = self.stop_point  # Store last valid stop point
-            # print('Using collision avoidance')
         elif self.last_valid_stop_point is not None:
             # Use last valid stop point if available
             self.stop_point = self.last_valid_stop_point

@@ -4,14 +4,14 @@
 
 ## TODO
 
-- [x] Can specify action space whether creating envs using cfg.
-- [ ] Manual MPC is unsure whether it is working (config not working in original version, BUG)
-- [ ] Check the if-statement w/ Saeed.
-  - [ ] What else constraint components do we consider or not?
-  - [ ] Add collision constraints in MPC (TODO)
+- [ ] Configure envs using cfg.
+- [x] Manual MPC is working
+- [x] Check the if-statement w/ Saeed.
+  - [x] What else constraint components do we consider or not?
+  - [x] Add collision constraints in MPC (TODO)
 - [x] V1 MPCRL Agent
   - [x] Current use action_dim = 7, including all the weight components, 
-  - [x] **Issue is that it may conflict with noCA, but can omit the exceeding weights.**
+  - [ ] **Issue is that it may conflict with noCA, but can omit the exceeding weights.**
 - [x] V0 MPCRL Agent
   - [x] Only use the action_dim = 1.
   - [ ] Boundary of the action? I find it succeed with random action of ref speed.

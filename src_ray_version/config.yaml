@@ -63,7 +63,7 @@ env:
   # -----------------------------------------------
   # DynamicWeightsAction
   v1:
-    action_dim: 18
+    action_dim: 6
 mpc:
   # -----------------------------------------------
   # action: acceleration, and steering.
@@ -77,3 +77,5 @@ mpc:
   ttc_threshold: 3        # unit: second 
   detection_distance: 100 # unit: meter
   speed_override: 0
+  # -----------------------------------------------
+  # Configuration of highway-env env.
