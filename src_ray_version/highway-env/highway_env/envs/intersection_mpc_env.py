@@ -513,8 +513,9 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             raise TypeError(
                 f"Expect observation type np.ndarray, but got {type(self.current_observation)}.")
         if self.current_observation.shape != (self.config["observation"]['vehicles_count'], 8):
+            expected_shape = (self.config["observation"]['vehicles_count'], 8)
             raise ValueError(
-                f"Expect observation's shape of ({(self.config["observation"]['vehicles_count'], 8)}), but got {self.current_observation.shape}")
+                f"Expect observation's shape of {expected_shape}, but got {self.current_observation.shape}")
 
         self.observed_vehicles_count = np.sum(
             self.current_observation[:, 0] == 1) - 1

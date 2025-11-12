@@ -49,7 +49,7 @@ env:
   # -----------------------------------------------
   # 2 RL agent variants:
   # refspeed (v0) or dynamicweights (v1). 
-  env_version: "v1"
+  env_version: "v0"
   # -----------------------------------------------
   # 4 collision avoidance (CA) variants:
   # noCA, manual, cost or constraint.
