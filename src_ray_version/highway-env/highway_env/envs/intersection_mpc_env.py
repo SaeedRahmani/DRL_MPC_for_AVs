@@ -1,4 +1,5 @@
 import copy
+import functools
 import numpy as np
 import highway_env
 import casadi as ca
@@ -34,9 +35,9 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             "speed",
             "control",
             "input_diff",
+            "final_state",
             # "distance",
             # "collision",
-            # "final_state"
         ]
         self.all_default_weights = {
             "weight_speed": 1,
@@ -217,24 +218,28 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
 
         self.enable_auto_render = False
 
+    # Maximum reference speed the RL agent can command (m/s)
+    MAX_REF_SPEED = 15.0
+
     def _predict_mpc_action(self, action: Action) -> Action:
         """ Predict the action of ego vehicle using MPC. """
         self._prepare_obs()
-        if self.CA_mode == "manual" or self.CA_mode == "cost":
-            self._check_collision()
 
-        test_speeds = [5.0, 10.0, 15.0]  # Test three different speeds
-        steps_per_speed = 33  # Change speed every 33 steps
-        if self.time_index % steps_per_speed == 0 and self.current_speed_idx < len(test_speeds):
-            self.ref_speed = test_speeds[self.current_speed_idx]
-            self.current_speed_idx = (
-                self.current_speed_idx + 1) % len(test_speeds)
+        # Always run collision check so conflict info is available for obs/reward
+        if self.CA_mode != "noCA":
+            self._check_collision()
+        elif self.agent_mode == "MPC-RL<Reference speed>":
+            # For RL-based CA: detect conflicts (for observation) but don't act on them in MPC
+            self._check_collision()
 
         if self.agent_mode == "Pure_MPC":
             mpc_action = self._solve_mpc(
                 weights=None, ref_speed=None)
         elif self.agent_mode == "MPC-RL<Reference speed>":
-            ref_speed = action
+            # Scale RL action from [-1, 1] → [0, MAX_REF_SPEED] m/s
+            raw_action = float(action[0]) if hasattr(action, '__len__') else float(action)
+            scaled_speed = (raw_action + 1.0) / 2.0 * self.MAX_REF_SPEED
+            ref_speed = np.clip(scaled_speed, 0.0, self.MAX_REF_SPEED)
             mpc_action = self._solve_mpc(weights=None, ref_speed=np.array([[ref_speed]]))
         elif self.agent_mode == "MPC-RL<Dynamic weights>":
             weights = action
@@ -293,6 +298,8 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         # if self.manual_collision_avoidance:
         if self.CA_mode == "manual":
             # Generate new reference states, given the result of collision detection
+            # When RL provides ref_speed, update_reference_states now blends it
+            # with the CA deceleration profile (mean of the two).
             ref = self.update_reference_states(
                 speed_override=self.speed_override,
                 speed_overide_from_RL=ref_speed)
@@ -301,10 +308,10 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             # Update reference speed from RL if provided
             ref = np.copy(self.reference_states)
 
-        if ref_speed is not None:
-            # Clip between 0 and max speed
-            safe_speed = np.clip(ref_speed[0, 0], 0, 30.0)
-            ref[:, 2] = safe_speed
+            if ref_speed is not None:
+                # Clip between 0 and max speed
+                safe_speed = np.clip(ref_speed[0, 0], 0, 30.0)
+                ref[:, 2] = safe_speed
         
         closest_index = self.ego_index
 
@@ -334,7 +341,10 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
                 ca.cos(ref_heading) + dy * ca.sin(ref_heading)
 
             speed_weight = weights_dict["weight_speed"]
-            if self.is_collide:
+            # Boost speed tracking when collision is detected.
+            # In manual-CA mode the reference already contains the
+            # safety-clamped speed, so the MPC must track it urgently.
+            if self.is_collide and (self.agent_mode != "MPC-RL<Reference speed>" or self.CA_mode == "manual"):
                 speed_weight = 100
 
             # State cost
@@ -382,7 +392,7 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         desired_final_state = ref[ref_traj_index, :]
         final_state_cost += 100 * (
             (x[0, -1] - desired_final_state[0])**2 +
-            (x[1, -1] + desired_final_state[1])**2 +
+            (x[1, -1] - desired_final_state[1])**2 +
             20 * (x[3, -1] - desired_final_state[2])**2 +    # ref speed
             (x[2, -1] - desired_final_state[3])**2      # heading angle
         )
@@ -390,8 +400,8 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         total_cost = (
             state_cost * weights_dict["weight_state"] +
             control_cost * weights_dict["weight_control"] +
-            input_diff_cost * weights_dict["weight_input_diff"]
-            # final_state_cost * weights_dict["weight_final_state"]
+            input_diff_cost * weights_dict["weight_input_diff"] +
+            final_state_cost * weights_dict["weight_final_state"]
         )            
 
         # if self.manual_collision_avoidance:
@@ -440,11 +450,12 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         # Initial condition constraint
         g.append(x[:, 0] - state)
 
-        # TODO: Add collision constraints
+        # Collision avoidance constraints
         if self.CA_mode == "constraint":
-            pass
-            # ...
-            # g.append()
+            raise NotImplementedError(
+                "Constraint-based collision avoidance is not yet implemented. "
+                "Use CA_mode='cost' or CA_mode='manual' instead."
+            )
 
         # State-update constraints for the entire horizon
         for k in range(N):
@@ -483,7 +494,7 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         opts = {
             'ipopt.print_level': 0,
             'print_time': 0,
-            'ipopt.max_iter': 1000,
+            'ipopt.max_iter': 150,  # Bounded for real-time MPC; relies on warm-starting
             'ipopt.tol': 1e-6,
         }
         solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
@@ -540,8 +551,8 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
                     vectorized_speed=self.current_observation[i+1, 3:5],
                     heading=self._normalize_angle(
                         self.current_observation[i+1, 5]),
-                    sinh=self.current_observation[0, 6],
-                    cosh=self.current_observation[0, 7],
+                    sinh=self.current_observation[i+1, 6],
+                    cosh=self.current_observation[i+1, 7],
                 ))
             assert len(self.agent_vehicles) == self.observed_vehicles_count
         self.agent_vehicles_mpc = copy.deepcopy(self.agent_vehicles)
@@ -562,7 +573,7 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             angle += 2 * np.pi
         return angle
 
-    @property
+    @functools.cached_property
     def reference_states(self):
         trajectory = []
         x, y, v, heading, v_ref = 2, 50, 10, -np.pi/2, 10  # Starting with 10 m/s speed
@@ -602,52 +613,60 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
         return np.array(trajectory)
 
     def update_reference_states(self, speed_override=None, speed_overide_from_RL=None) -> np.ndarray:
-        """Update reference states with stored collision information"""
+        """Update reference states with stored collision information.
+
+        When an RL agent provides a reference speed AND a collision is
+        detected, we *blend* the two signals by averaging the RL speed
+        and the CA-computed safe speed at every trajectory point.  This
+        ensures the manual CA deceleration profile always participates
+        instead of being completely overridden by the RL output.
+        """
         DEFAULT_MAX_SPEED = 30.0
         SAFETY_BUFFER_POINTS = 5
 
-        if speed_overide_from_RL is not None:
-            new_ref = np.copy(self.reference_states)
-            safe_speed = np.clip(
-                speed_overide_from_RL[0, 0], 0, DEFAULT_MAX_SPEED)
-            new_ref[:, 2] = safe_speed
-            return new_ref
-
+        # ── Step 1: compute the CA-safe reference (decel profile if conflict) ──
         if not self.is_collide:
-            return np.copy(self.reference_states)
+            new_reference_states = np.copy(self.reference_states)
+        else:
+            new_reference_states = np.copy(self.reference_states)
 
-        new_reference_states = np.copy(self.reference_states)
+            # Use either current or memorized conflict indices
+            conflict_indices = self.conflict_index
+            if self.collision_memory > 0 and self.memorized_conflict_indices is not None:
+                conflict_indices = self.memorized_conflict_indices
 
-        # Use either current or memorized conflict indices
-        conflict_indices = self.conflict_index
-        if self.collision_memory > 0 and self.memorized_conflict_indices is not None:
-            conflict_indices = self.memorized_conflict_indices
+            valid_conflict_indices = [
+                idx for idx in conflict_indices if idx is not None]
 
-        valid_conflict_indices = [
-            idx for idx in conflict_indices if idx is not None]
+            if valid_conflict_indices:
+                earliest_conflict_index = min(valid_conflict_indices)
+                stop_index = max(self.ego_index + 1,
+                                 earliest_conflict_index - SAFETY_BUFFER_POINTS)
+                # Cap to max valid index
+                stop_index = min(stop_index, len(self.reference_trajectory) - 1)
+                points_to_stop = stop_index - self.ego_index
 
-        if not valid_conflict_indices:
-            return new_reference_states
+                if points_to_stop > 0:
+                    current_speed = self.ego_vehicle.speed
+                    deceleration_profile = np.linspace(
+                        current_speed, 0, points_to_stop)
+                    new_reference_states[self.ego_index:stop_index,
+                                         2] = deceleration_profile
+                    new_reference_states[stop_index:, 2] = 0.0
+                    self.stop_point = self.reference_trajectory[stop_index]
+                    self.last_valid_stop_point = self.stop_point
+                elif self.last_valid_stop_point is not None:
+                    self.stop_point = self.last_valid_stop_point
 
-        earliest_conflict_index = min(valid_conflict_indices)
-        stop_index = max(self.ego_index + 1,
-                         earliest_conflict_index - SAFETY_BUFFER_POINTS)
-        # Cap to max valid index
-        stop_index = min(stop_index, len(self.reference_trajectory) - 1)
-        points_to_stop = stop_index - self.ego_index
-
-        if points_to_stop > 0:
-            current_speed = self.ego_vehicle.speed
-            deceleration_profile = np.linspace(
-                current_speed, 0, points_to_stop)
-            new_reference_states[self.ego_index:stop_index,
-                                 2] = deceleration_profile
-            new_reference_states[stop_index:, 2] = 0.0
-            self.stop_point = self.reference_trajectory[stop_index]
-            self.last_valid_stop_point = self.stop_point  # Store last valid stop point
-        elif self.last_valid_stop_point is not None:
-            # Use last valid stop point if available
-            self.stop_point = self.last_valid_stop_point
+        # ── Step 2: clamp with RL speed if provided ──
+        # Safety-filter approach (Wabersich & Zeilinger 2021): the CA
+        # deceleration profile acts as a hard ceiling.  RL can request
+        # any speed, but the MPC will never track more than the CA-safe
+        # speed at each trajectory point.
+        if speed_overide_from_RL is not None:
+            rl_speed = np.clip(speed_overide_from_RL[0, 0], 0, DEFAULT_MAX_SPEED)
+            ca_speeds = new_reference_states[:, 2]
+            new_reference_states[:, 2] = np.minimum(rl_speed, ca_speeds)
 
         return new_reference_states
 
@@ -749,7 +768,7 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
     def _check_collision(self):
         """Modified collision detection to preserve collision state during memory period"""
         PREDICTION_HORIZON = 30
-        TIME_THRESHOLD = 30
+        TIME_THRESHOLD = 8
 
         # If we're in memory period and have stored collision points, use those
         if self.collision_memory > 0 and self.memorized_conflict_points is not None:
@@ -766,6 +785,9 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             for trajectory_point in self.reference_trajectory
         ])
 
+        # Use the actual ego speed (not the static 10 m/s from
+        # reference_states) so that collision detection is accurate
+        # when the RL agent commands higher speeds.
         ego_future_positions = self.predict_ego_future_positions(
             current_position=self.ego_vehicle.position,
             speed=self.ego_vehicle.speed,
@@ -773,7 +795,8 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             max_acceleration=self.ego_vehicle.max_acceleration,
             dt=self.dt,
             prediction_horizon=PREDICTION_HORIZON,
-            reference_speed=self.reference_states[self.ego_index, 2]
+            reference_speed=max(self.ego_vehicle.speed,
+                                self.reference_states[self.ego_index, 2])
         )
 
         try:
@@ -901,9 +924,9 @@ class IntersectionMpcEnv_manual(IntersectionMpcEnv_noCA):
             "speed",
             "control",
             "input_diff",
+            "final_state",
             # "distance",
             # "collision",
-            # "final_state"
         ]
         self.all_default_weights = {
             "weight_speed": 1,

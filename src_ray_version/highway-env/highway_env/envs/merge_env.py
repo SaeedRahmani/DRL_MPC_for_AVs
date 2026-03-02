@@ -30,6 +30,7 @@ class MergeEnv(AbstractEnv):
                 "reward_speed_range": [20, 30],
                 "merging_speed_reward": -0.5,
                 "lane_change_reward": -0.05,
+                "ego_on_ramp": False,
             }
         )
         return cfg
@@ -56,15 +57,20 @@ class MergeEnv(AbstractEnv):
             [0, 1],
         )
 
-    def _rewards(self, action: int) -> dict[str, float]:
+    def _rewards(self, action) -> dict[str, float]:
         scaled_speed = utils.lmap(
             self.vehicle.speed, self.config["reward_speed_range"], [0, 1]
         )
+        # lane_change_reward only applies to discrete actions
+        if isinstance(action, (int, np.integer)):
+            lane_change = action in [0, 2]
+        else:
+            lane_change = False
         return {
             "collision_reward": self.vehicle.crashed,
             "right_lane_reward": self.vehicle.lane_index[2] / 1,
             "high_speed_reward": scaled_speed,
-            "lane_change_reward": action in [0, 2],
+            "lane_change_reward": lane_change,
             "merging_speed_reward": sum(  # Altruistic penalty
                 (vehicle.target_speed - vehicle.speed) / vehicle.target_speed
                 for vehicle in self.road.vehicles
@@ -75,8 +81,6 @@ class MergeEnv(AbstractEnv):
 
     def _is_terminated(self) -> bool:
         """The episode is over when a collision occurs or when the access ramp has been passed."""
-        print("crash" + str(self.vehicle.crashed))
-        print("over" + str(self.vehicle.position[0] > 370))
         return self.vehicle.crashed or bool(self.vehicle.position[0] > 370)
 
     def _is_truncated(self) -> bool:
@@ -161,22 +165,65 @@ class MergeEnv(AbstractEnv):
         :return: the ego-vehicle
         """
         road = self.road
-        ego_vehicle = self.action_type.vehicle_class(
-            road, road.network.get_lane(("a", "b", 1)).position(30, 0), speed=30
-        )
-        road.vehicles.append(ego_vehicle)
-
         other_vehicles_type = utils.class_from_path(self.config["other_vehicles_type"])
 
-        for position, speed in [(90, 29), (70, 31), (5, 31.5)]:
-            lane = road.network.get_lane(("a", "b", self.np_random.integers(2)))
-            position = lane.position(position + self.np_random.uniform(-5, 5), 0)
-            speed += self.np_random.uniform(-1, 1)
-            road.vehicles.append(other_vehicles_type(road, position, speed=speed))
+        if self.config.get("ego_on_ramp", False):
+            # ── Ego starts on the merge ramp ──
+            ego_vehicle = self.action_type.vehicle_class(
+                road,
+                road.network.get_lane(("j", "k", 0)).position(110, 0),
+                speed=20,
+            )
+            ego_vehicle.target_speed = 30
+            road.vehicles.append(ego_vehicle)
 
-        merging_v = other_vehicles_type(
-            road, road.network.get_lane(("j", "k", 0)).position(110, 0), speed=20
-        )
-        merging_v.target_speed = 30
-        road.vehicles.append(merging_v)
+            # Highway traffic — includes vehicles near the merge zone
+            # (x=200,260 on lane 1) to force ego to negotiate a gap
+            for position, speed, lane_idx in [
+                (30, 30, None),    # behind, random lane
+                (90, 29, None),    # mid, random lane
+                (70, 31, None),    # mid, random lane
+                (5, 31.5, None),   # far behind, random lane
+                (200, 29, 1),      # near merge zone, lane 1 (ego's target)
+                (260, 28, 1),      # in merge zone, lane 1 (ego's target)
+            ]:
+                if lane_idx is None:
+                    lane_idx = int(self.np_random.integers(2))
+                lane = road.network.get_lane(("a", "b", lane_idx))
+                position = lane.position(
+                    position + self.np_random.uniform(-5, 5), 0
+                )
+                speed += self.np_random.uniform(-1, 1)
+                road.vehicles.append(
+                    other_vehicles_type(road, position, speed=speed)
+                )
+        else:
+            # ── Original: ego on the highway ──
+            ego_vehicle = self.action_type.vehicle_class(
+                road,
+                road.network.get_lane(("a", "b", 1)).position(30, 0),
+                speed=30,
+            )
+            road.vehicles.append(ego_vehicle)
+
+            for position, speed in [(90, 29), (70, 31), (5, 31.5)]:
+                lane = road.network.get_lane(
+                    ("a", "b", self.np_random.integers(2))
+                )
+                position = lane.position(
+                    position + self.np_random.uniform(-5, 5), 0
+                )
+                speed += self.np_random.uniform(-1, 1)
+                road.vehicles.append(
+                    other_vehicles_type(road, position, speed=speed)
+                )
+
+            merging_v = other_vehicles_type(
+                road,
+                road.network.get_lane(("j", "k", 0)).position(110, 0),
+                speed=20,
+            )
+            merging_v.target_speed = 30
+            road.vehicles.append(merging_v)
+
         self.vehicle = ego_vehicle

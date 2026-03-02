@@ -24,6 +24,7 @@ from ray.tune.logger import (
     TBXLoggerCallback
 )
 from ray.tune import TuneConfig, RunConfig, CLIReporter
+from ray.train import CheckpointConfig
 from ray.tune.schedulers import ASHAScheduler
 from pprint import pprint
 
@@ -48,7 +49,7 @@ def train_mpcrl_agent(cfg: DictConfig):
     ray.shutdown()
 
     ray.init(
-        num_cpus=22,  
+        num_cpus=16,  
         num_gpus=1,
         logging_level=logging.INFO,
         log_to_driver=False,    # disable the pid loggings.
@@ -108,17 +109,16 @@ def train_mpcrl_agent(cfg: DictConfig):
         .env_runners(
             num_env_runners=cfg.rllib.num_env_runners,
             num_cpus_per_env_runner=cfg.rllib.num_cpus_per_env_runner,
-            num_gpus_per_env_runner=cfg.rllib.num_gpus / cfg.rllib.num_env_runners,
+            num_gpus_per_env_runner=0,  # EnvRunners run MPC on CPU; they don't need GPU
+            num_envs_per_env_runner=cfg.rllib.num_envs_per_env_runner,
             gym_env_vectorize_mode=VectorizeMode.ASYNC, 
-            # Set this to ASYNC to parallelize the individual sub environments within the vector. 
-            # This can speed up your EnvRunners significantly when using heavier environments.
+            # ASYNC parallelizes sub-environments within each runner.
+            # Requires num_envs_per_env_runner > 1 to have any effect.
         )
-        # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
-        # resources.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.resources
-        # .resources(
-        #     # num_gpus=cfg.rllib.num_gpus,
-        #     num_gpus_per_worker=cfg.rllib.num_gpus / cfg.rllib.num_env_runners,
-        # )
+        # Give the GPU to the learner (local Algorithm on old API stack)
+        .resources(
+            num_gpus=cfg.rllib.num_gpus,
+        )
         # https://docs.ray.io/en/latest/rllib/package_ref/doc/ray.rllib.algorithms.algorithm_config.AlgorithmConfig.
         # training.html#ray.rllib.algorithms.algorithm_config.AlgorithmConfig.training
         .training(
@@ -128,6 +128,9 @@ def train_mpcrl_agent(cfg: DictConfig):
             train_batch_size=cfg.agent.train_batch_size,
             minibatch_size=cfg.agent.minibatch_size,
             shuffle_batch_per_epoch=cfg.agent.shuffle_batch_per_epoch,
+            grad_clip=0.5,           # prevent NaN explosion from large reward gradients
+            grad_clip_by="global_norm",
+            torch_skip_nan_gradients=True,  # skip update if NaN detected instead of corrupting model
             model={
                 "fcnet_hiddens": [512, 256],
             },
@@ -148,8 +151,8 @@ def train_mpcrl_agent(cfg: DictConfig):
     
     if algo_name == "PPO":
         config.training(
-            # use_critic=algo_parameters.use_critic,
-            # use_gae=algo_parameters.use_gae,
+            use_critic=algo_parameters.use_critic,
+            use_gae=algo_parameters.use_gae,
             lambda_=algo_parameters.lambda_,
             use_kl_loss=algo_parameters.use_kl_loss,
             kl_coeff=algo_parameters.kl_coeff,
@@ -160,7 +163,7 @@ def train_mpcrl_agent(cfg: DictConfig):
             # target_network_update_freq=algo_parameters.target_network_update_freq,
             replay_buffer_config={
                 "_enable_replay_buffer_api": True, 
-                "type": "MultiAgentReplayBuffer", 
+                "type": "ReplayBuffer",  # Single-agent env; use ReplayBuffer, not MultiAgent
                 "capacity": 50000, 
                 "replay_sequence_length": 1,
                 # "MultiAgentPrioritizedReplayBuffer"
@@ -185,6 +188,8 @@ def train_mpcrl_agent(cfg: DictConfig):
     # results = algo.train()
     # pp(results)
 
+    experiment_name = f"{cfg.agent.version}_{env_version}_{subenv_version}"
+
     if cfg.rllib.enable_tuner == False:
         tuner = ray.tune.Tuner(
         cfg.agent.version,
@@ -193,11 +198,16 @@ def train_mpcrl_agent(cfg: DictConfig):
             ),
         run_config=RunConfig(
             storage_path=cfg.rllib.storage_path,
-            name=f"{cfg.agent.version}",
+            name=experiment_name,
             callbacks=[TBXLoggerCallback(), CSVLoggerCallback(), JsonLoggerCallback()],
             stop={
-                "training_iteration": 1
+                "timesteps_total": 5_000_000  # ~1220 iters @ 4096 steps/iter; change to 1_000_000, 2_000_000, etc.
             },
+            checkpoint_config=CheckpointConfig(
+                checkpoint_frequency=20,   # save every 20 iterations
+                checkpoint_at_end=True,    # always save final weights
+                num_to_keep=5,             # keep last 5 checkpoints
+            ),
             # 0 = silent, 
             # 1 = default (display result table for the last iteration), 
             # 2 = verbose (display result table for each iteration).

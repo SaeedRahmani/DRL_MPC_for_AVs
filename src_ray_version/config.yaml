@@ -14,11 +14,12 @@ rllib:
                                 # Otherwise, `Algorithm.training_step()` runs in the main program (driver).
   num_env_runners: 10
   num_cpus_per_env_runner: 1
+  num_envs_per_env_runner: 2   # >1 needed for ASYNC vectorization to be effective
 
 agent:
   version: "PPO"                # "PPO" or "SAC"  
   # training
-  gamma: 0.9
+  gamma: 0.99
   lr: 1e-4
   train_batch_size : 4096        # `train_batch_size_per_learner` is its equivalent to new API stack
                                 # The number of complete passes over the entire train batch
@@ -36,11 +37,11 @@ agent:
   # https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#ppo
   PPO:
     use_critic: True
-    use_gae: False
-    lambda_: 0.01
+    use_gae: True
+    lambda_: 0.95
     use_kl_loss: True
-    kl_coeff: 1
-    kl_target: 1
+    kl_coeff: 0.2
+    kl_target: 0.01
 
   # https://docs.ray.io/en/latest/rllib/rllib-algorithms.html#sac
   SAC:

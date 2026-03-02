@@ -69,7 +69,7 @@ class IntersectionMpcrlWeightsEnv_cost(IntersectionMpcEnv_cost):
         self.action_dim = action_dim
         self.config["action"]["num_weights"] = self.action_dim
         self.define_spaces()
-        self.CA_mode == "cost"
+        self.CA_mode = "cost"
         assert self.CA_mode == "cost", "Expect CA mode to be `cost`."
         self.agent_mode = "MPC-RL<Dynamic weights>"
 
