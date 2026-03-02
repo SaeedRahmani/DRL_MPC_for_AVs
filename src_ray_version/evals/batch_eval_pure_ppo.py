@@ -54,7 +54,7 @@ def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".", record_video
         os.makedirs(video_dir, exist_ok=True)
         env = gymnasium.wrappers.RecordVideo(
             env, video_folder=video_dir,
-            episode_trigger=lambda ep: True,
+            episode_trigger=lambda ep: ep < 10,
             name_prefix=f"eval_{model_name}",
         )
 

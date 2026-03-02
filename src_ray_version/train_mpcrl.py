@@ -130,7 +130,6 @@ def train_mpcrl_agent(cfg: DictConfig):
             shuffle_batch_per_epoch=cfg.agent.shuffle_batch_per_epoch,
             grad_clip=0.5,           # prevent NaN explosion from large reward gradients
             grad_clip_by="global_norm",
-            torch_skip_nan_gradients=True,  # skip update if NaN detected instead of corrupting model
             model={
                 "fcnet_hiddens": [512, 256],
             },
@@ -148,6 +147,9 @@ def train_mpcrl_agent(cfg: DictConfig):
         #     metrics_num_episodes_for_smoothing=100    
         )
     )
+
+    # Set directly — not accepted as a .training() kwarg in Ray 2.43
+    config.torch_skip_nan_gradients = True
     
     if algo_name == "PPO":
         config.training(
@@ -157,6 +159,8 @@ def train_mpcrl_agent(cfg: DictConfig):
             use_kl_loss=algo_parameters.use_kl_loss,
             kl_coeff=algo_parameters.kl_coeff,
             kl_target=algo_parameters.kl_target,
+            entropy_coeff=algo_parameters.get("entropy_coeff", 0.01),
+            clip_param=algo_parameters.get("clip_param", 0.2),
         )
     elif algo_name == "SAC":
         config.training(
@@ -188,7 +192,7 @@ def train_mpcrl_agent(cfg: DictConfig):
     # results = algo.train()
     # pp(results)
 
-    experiment_name = f"{cfg.agent.version}_{env_version}_{subenv_version}"
+    experiment_name = f"{cfg.agent.version}_{env_version}_{subenv_version}_v2"
 
     if cfg.rllib.enable_tuner == False:
         tuner = ray.tune.Tuner(

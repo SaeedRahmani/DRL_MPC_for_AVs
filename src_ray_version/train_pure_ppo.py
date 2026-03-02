@@ -290,13 +290,16 @@ def main():
         )
         .training(
             gamma=0.99,
-            lr=1e-4,
+            lr=3e-5,              # lower LR for stable 2D continuous control
             num_epochs=10,
             train_batch_size=4096,
-            minibatch_size=64,
+            minibatch_size=256,   # larger minibatch → lower gradient variance
             shuffle_batch_per_epoch=True,
             grad_clip=0.5,
             grad_clip_by="global_norm",
+            entropy_coeff=0.01,   # prevent entropy runaway / premature collapse
+            clip_param=0.2,       # tighter clipping → more conservative updates
+            vf_clip_param=10.0,
             model={
                 "fcnet_hiddens": [512, 256],
             },
@@ -323,7 +326,7 @@ def main():
         )
     )
 
-    experiment_name = "PPO_pure_RL"
+    experiment_name = "PPO_pure_RL_v2"
 
     tuner = ray.tune.Tuner(
         "PPO",
