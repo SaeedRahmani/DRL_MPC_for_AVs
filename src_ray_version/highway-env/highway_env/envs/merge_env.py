@@ -177,19 +177,11 @@ class MergeEnv(AbstractEnv):
             ego_vehicle.target_speed = 30
             road.vehicles.append(ego_vehicle)
 
-            # Highway traffic — includes vehicles near the merge zone
-            # (x=200,260 on lane 1) to force ego to negotiate a gap
-            for position, speed, lane_idx in [
-                (30, 30, None),    # behind, random lane
-                (90, 29, None),    # mid, random lane
-                (70, 31, None),    # mid, random lane
-                (5, 31.5, None),   # far behind, random lane
-                (200, 29, 1),      # near merge zone, lane 1 (ego's target)
-                (260, 28, 1),      # in merge zone, lane 1 (ego's target)
-            ]:
-                if lane_idx is None:
-                    lane_idx = int(self.np_random.integers(2))
-                lane = road.network.get_lane(("a", "b", lane_idx))
+            # Highway traffic
+            for position, speed in [(30, 30), (90, 29), (70, 31), (5, 31.5)]:
+                lane = road.network.get_lane(
+                    ("a", "b", self.np_random.integers(2))
+                )
                 position = lane.position(
                     position + self.np_random.uniform(-5, 5), 0
                 )
