@@ -344,8 +344,9 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
             # Boost speed tracking when collision is detected.
             # In manual-CA mode the reference already contains the
             # safety-clamped speed, so the MPC must track it urgently.
+            # Use moderate boost (30) so RL still has influence.
             if self.is_collide and (self.agent_mode != "MPC-RL<Reference speed>" or self.CA_mode == "manual"):
-                speed_weight = 100
+                speed_weight = 30
 
             # State cost
             state_cost += (
@@ -658,15 +659,22 @@ class IntersectionMpcEnv_noCA(IntersectionEnv):
                 elif self.last_valid_stop_point is not None:
                     self.stop_point = self.last_valid_stop_point
 
-        # ── Step 2: clamp with RL speed if provided ──
-        # Safety-filter approach (Wabersich & Zeilinger 2021): the CA
-        # deceleration profile acts as a hard ceiling.  RL can request
-        # any speed, but the MPC will never track more than the CA-safe
-        # speed at each trajectory point.
+        # ── Step 2: blend RL speed with CA profile ──
+        # When NO conflict: RL freely sets speed (capped at speed limit + 10%)
+        # When conflict detected: CA decel profile acts as hard ceiling
+        #   (safety-filter approach, Wabersich & Zeilinger 2021).
         if speed_overide_from_RL is not None:
-            rl_speed = np.clip(speed_overide_from_RL[0, 0], 0, DEFAULT_MAX_SPEED)
-            ca_speeds = new_reference_states[:, 2]
-            new_reference_states[:, 2] = np.minimum(rl_speed, ca_speeds)
+            SPEED_LIMIT = self.MAX_REF_SPEED  # 15 m/s
+            HARD_CAP = SPEED_LIMIT * 1.10     # +10% tolerance
+            rl_speed = np.clip(speed_overide_from_RL[0, 0], 0, HARD_CAP)
+
+            if self.is_collide:
+                # Conflict detected → CA decel profile is the ceiling
+                ca_speeds = new_reference_states[:, 2]
+                new_reference_states[:, 2] = np.minimum(rl_speed, ca_speeds)
+            else:
+                # Safe → RL controls speed freely up to the hard cap
+                new_reference_states[:, 2] = rl_speed
 
         return new_reference_states
 
