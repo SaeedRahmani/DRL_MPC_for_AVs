@@ -42,6 +42,14 @@ from highway_env.envs import (
 from ray.rllib.policy.policy import Policy
 
 
+# ── Difficulty presets ──
+DIFFICULTY_PRESETS = {
+    "very_easy": {"initial_vehicle_count": 2,  "spawn_probability": 0.1},
+    "easy":      {"initial_vehicle_count": 5,  "spawn_probability": 0.3},
+    "moderate":  {"initial_vehicle_count": 10, "spawn_probability": 0.6},
+    "hard":      {"initial_vehicle_count": 15, "spawn_probability": 0.9},
+}
+
 # ── Registry ──
 MODEL_REGISTRY = {
     "noCA": {
@@ -61,15 +69,19 @@ def run_evaluation(
     n_episodes: int = 100,
     output_dir: str = ".",
     record_video: bool = True,
+    difficulty: str = "moderate",
 ):
     """Run batch evaluation and return summary dict."""
     info = MODEL_REGISTRY[model_name]
     env_name = info["env_name"]
     video_dir = os.path.join(output_dir, f"videos_{model_name}")
+    os.makedirs(output_dir, exist_ok=True)
 
+    diff_cfg = DIFFICULTY_PRESETS[difficulty]
     print(f"\n{'='*60}")
     print(f"  Model:      {model_name}")
     print(f"  Checkpoint: {checkpoint_path}")
+    print(f"  Difficulty: {difficulty} (vehicles={diff_cfg['initial_vehicle_count']}, spawn={diff_cfg['spawn_probability']})")
     print(f"  Episodes:   {n_episodes}")
     print(f"  Output:     {output_dir}")
     print(f"{'='*60}\n")
@@ -83,6 +95,7 @@ def run_evaluation(
 
     # ── Create env ──
     env = gymnasium.make(env_name, render_mode="rgb_array")
+    env.unwrapped.configure(diff_cfg)
     if record_video:
         os.makedirs(video_dir, exist_ok=True)
         env = gymnasium.wrappers.RecordVideo(
@@ -137,6 +150,8 @@ def run_evaluation(
 
     summary = {
         "model": model_name,
+        "difficulty": difficulty,
+        "difficulty_config": diff_cfg,
         "checkpoint": checkpoint_path,
         "n_episodes": n_episodes,
         "collision_rate": n_crash / n_episodes,
@@ -180,7 +195,7 @@ def run_evaluation(
     print(f"{'='*60}\n")
 
     # ── Save JSON ──
-    json_path = os.path.join(output_dir, f"eval_results_{model_name}.json")
+    json_path = os.path.join(output_dir, f"eval_results_{model_name}_{difficulty}_{n_episodes}ep.json")
     with open(json_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"[eval] Results saved to: {json_path}")
@@ -201,6 +216,9 @@ def main():
                         help="Directory to save results and videos")
     parser.add_argument("--no-video", action="store_true",
                         help="Skip video recording (faster)")
+    parser.add_argument("--difficulty", type=str, default="moderate",
+                        choices=["very_easy", "easy", "moderate", "hard"],
+                        help="Scenario difficulty (default: moderate)")
     args = parser.parse_args()
 
     run_evaluation(
@@ -209,6 +227,7 @@ def main():
         n_episodes=args.episodes,
         output_dir=args.output_dir,
         record_video=not args.no_video,
+        difficulty=args.difficulty,
     )
 
 

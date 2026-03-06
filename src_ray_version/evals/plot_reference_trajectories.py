@@ -127,15 +127,20 @@ def draw_vehicle(ax, x, y, heading, length=5.0, width=2.0,
         larger than x-data units.  Pass the ratio so the rectangle looks
         correct on screen.  For equal-aspect axes pass 1.0.
     """
-    cos_h, sin_h = np.cos(heading), np.sin(heading)
     hl, hw = length / 2, width / 2
     corners_local = np.array([
         [-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]
     ])
-    # Stretch y-coords so the rectangle *looks* right on a non-equal-aspect plot
-    scale = np.array([1.0, 1.0 / aspect_correction])
-    R = np.array([[cos_h, -sin_h], [sin_h, cos_h]])
-    corners = (corners_local * scale) @ R.T + np.array([x, y])
+    # Convert data heading to the *visual* heading so the vehicle aligns
+    # with the trajectory as it appears on screen (non-equal aspect).
+    vis_h = np.arctan2(np.sin(heading),
+                       np.cos(heading) / aspect_correction)
+    cos_v, sin_v = np.cos(vis_h), np.sin(vis_h)
+    R = np.array([[cos_v, -sin_v], [sin_v, cos_v]])
+    # Rotate in visual space, then compress data-y so it looks right.
+    corners = corners_local @ R.T
+    corners[:, 1] /= aspect_correction
+    corners += np.array([x, y])
     patch = Polygon(corners, closed=True, fc=fc, ec=ec, lw=0.6,
                     alpha=alpha, zorder=zorder, label=label)
     ax.add_patch(patch)

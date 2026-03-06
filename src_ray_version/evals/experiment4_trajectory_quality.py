@@ -43,7 +43,15 @@ warnings.filterwarnings("ignore", message="invalid value")
 
 EVALS_DIR  = os.path.dirname(os.path.abspath(__file__))
 PPO_CKPT   = "/users/saeani/DEV/ray_results/PPO_pure_RL/PPO_intersection-pure-ppo_03a31_00000_0_2026-03-01_23-40-22/checkpoint_000025"
-MPCRL_CKPT = "/users/saeani/DEV/ray_results/PPO_v0_manual/PPO_intersection-mpcrl-refspeed-manual_c129f_00000_0_2026-03-01_00-44-07/checkpoint_000020"
+MPCRL_CKPT = "/users/saeani/DEV/ray_results/PPO_v0_manual_v2/PPO_intersection-mpcrl-refspeed-manual_450ad_00000_0_2026-03-04_11-35-39/checkpoint_000050"
+
+# ── Difficulty presets (same as 1000-ep evals) ──
+DIFFICULTY_PRESETS = {
+    "very_easy": {"initial_vehicle_count": 2,  "spawn_probability": 0.1},
+    "easy":      {"initial_vehicle_count": 5,  "spawn_probability": 0.3},
+    "moderate":  {"initial_vehicle_count": 10, "spawn_probability": 0.6},
+    "hard":      {"initial_vehicle_count": 15, "spawn_probability": 0.9},
+}
 
 sys.path.insert(0, os.path.join(EVALS_DIR, "../../../MPC-RL_for_AVs/src_ray_version"))
 
@@ -135,7 +143,7 @@ def derive_metrics(steps: list[StepRecord], dt: float) -> dict:
 # =====================================================================
 #  1. PURE RL
 # =====================================================================
-def collect_pure_rl(n_episodes, ppo_ckpt, max_arrived=5):
+def collect_pure_rl(n_episodes, ppo_ckpt, max_arrived=5, difficulty="moderate"):
     """Run Pure RL episodes, collect trajectory data for arrived episodes."""
     from ray.rllib.policy.policy import Policy
     from train_pure_ppo import IntersectionPurePPOEnv
@@ -146,6 +154,8 @@ def collect_pure_rl(n_episodes, ppo_ckpt, max_arrived=5):
         policy = policy["default_policy"]
 
     env = IntersectionPurePPOEnv(render_mode="rgb_array")
+    if difficulty in DIFFICULTY_PRESETS:
+        env.unwrapped.configure(DIFFICULTY_PRESETS[difficulty])
     episodes_data = []
     n_arrived = 0
 
@@ -184,9 +194,11 @@ def collect_pure_rl(n_episodes, ppo_ckpt, max_arrived=5):
 # =====================================================================
 #  2. PURE MPC
 # =====================================================================
-def collect_pure_mpc(n_episodes, max_arrived=5):
+def collect_pure_mpc(n_episodes, max_arrived=5, difficulty="moderate"):
     """Run Pure MPC episodes, collect trajectory data for arrived episodes."""
     env = gymnasium.make("intersection-mpc-manual", render_mode="rgb_array")
+    if difficulty in DIFFICULTY_PRESETS:
+        env.unwrapped.configure(DIFFICULTY_PRESETS[difficulty])
     episodes_data = []
     n_arrived = 0
 
@@ -231,7 +243,7 @@ def collect_pure_mpc(n_episodes, max_arrived=5):
 # =====================================================================
 #  3. MPC-RL
 # =====================================================================
-def collect_mpcrl(n_episodes, mpcrl_ckpt, max_arrived=5):
+def collect_mpcrl(n_episodes, mpcrl_ckpt, max_arrived=5, difficulty="moderate"):
     """Run MPC-RL episodes, collect trajectory data for arrived episodes."""
     from ray.rllib.policy.policy import Policy
 
@@ -241,6 +253,8 @@ def collect_mpcrl(n_episodes, mpcrl_ckpt, max_arrived=5):
         policy = policy["default_policy"]
 
     env = gymnasium.make("intersection-mpcrl-refspeed-manual", render_mode="rgb_array")
+    if difficulty in DIFFICULTY_PRESETS:
+        env.unwrapped.configure(DIFFICULTY_PRESETS[difficulty])
     episodes_data = []
     n_arrived = 0
 
@@ -372,20 +386,25 @@ def make_comfort_bar_chart(all_metrics, output_dir):
 # =====================================================================
 def main():
     parser = argparse.ArgumentParser(description="Experiment 4: Trajectory Quality")
-    parser.add_argument("--episodes", type=int, default=50,
-                        help="Max episodes to try per method (default: 50)")
-    parser.add_argument("--max-arrived", type=int, default=5,
-                        help="Stop after this many arrived episodes per method (default: 5)")
+    parser.add_argument("--episodes", type=int, default=100,
+                        help="Max episodes to try per method (default: 100)")
+    parser.add_argument("--max-arrived", type=int, default=10,
+                        help="Stop after this many arrived episodes per method (default: 10)")
     parser.add_argument("--ppo-ckpt", type=str, default=PPO_CKPT)
     parser.add_argument("--mpcrl-ckpt", type=str, default=MPCRL_CKPT)
     parser.add_argument("--output-dir", type=str, default=EVALS_DIR)
+    parser.add_argument("--difficulty", type=str, default="moderate",
+                        choices=["very_easy", "easy", "moderate", "hard"],
+                        help="Scenario difficulty (default: moderate)")
     args = parser.parse_args()
 
     output_dir = os.path.join(args.output_dir, "experiment4_results")
     os.makedirs(output_dir, exist_ok=True)
 
+    diff_cfg = DIFFICULTY_PRESETS[args.difficulty]
     print(f"\n{'#'*60}")
     print(f"  Experiment 4: Trajectory Quality Analysis")
+    print(f"  Difficulty: {args.difficulty} (vehicles={diff_cfg['initial_vehicle_count']}, spawn={diff_cfg['spawn_probability']})")
     print(f"  Max episodes per method: {args.episodes}")
     print(f"  Target arrived episodes: {args.max_arrived}")
     print(f"  Output: {output_dir}")
@@ -395,17 +414,17 @@ def main():
     print("\n" + "="*60)
     print("  [1/3] Collecting Pure RL trajectories ...")
     print("="*60)
-    pure_rl_data = collect_pure_rl(args.episodes, args.ppo_ckpt, args.max_arrived)
+    pure_rl_data = collect_pure_rl(args.episodes, args.ppo_ckpt, args.max_arrived, args.difficulty)
 
     print("\n" + "="*60)
     print("  [2/3] Collecting Pure MPC trajectories ...")
     print("="*60)
-    pure_mpc_data = collect_pure_mpc(args.episodes, args.max_arrived)
+    pure_mpc_data = collect_pure_mpc(args.episodes, args.max_arrived, args.difficulty)
 
     print("\n" + "="*60)
     print("  [3/3] Collecting MPC-RL trajectories ...")
     print("="*60)
-    mpcrl_data = collect_mpcrl(args.episodes, args.mpcrl_ckpt, args.max_arrived)
+    mpcrl_data = collect_mpcrl(args.episodes, args.mpcrl_ckpt, args.max_arrived, args.difficulty)
 
     # ── Derive metrics per episode ──
     all_metrics = {}

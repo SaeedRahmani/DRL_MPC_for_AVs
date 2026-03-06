@@ -11,11 +11,16 @@ For zero-shot transfer to merging we:
   3. Feed it to the trained PPO policy which directly outputs [acc, steer]
   4. Apply the action to the merge env
 
+Difficulty presets (controls number of highway traffic vehicles):
+  very_easy  : 1 vehicle
+  easy       : 2 vehicles
+  moderate   : 4 vehicles (default)
+
 Usage:
     cd /users/saeani/src/mpcrl/MPC-RL_for_AVs/src_ray_version && \\
     PYTHONPATH="$PWD:$PWD/highway-env:$PYTHONPATH" CUDA_VISIBLE_DEVICES="" \\
     python /users/saeani/src/mpcrl/DRL_MPC_for_AVs/src_ray_version/evals/batch_eval_merge_pure_ppo.py \\
-      --checkpoint <path> --episodes 100
+      --checkpoint <path> --episodes 1000 --difficulty easy --no-video
 """
 
 import os
@@ -34,6 +39,16 @@ from ray.rllib.policy.policy import Policy
 
 
 # ──────────────────────────────────────────────────────────────────────
+#  Difficulty presets (number of highway traffic vehicles)
+# ──────────────────────────────────────────────────────────────────────
+MERGE_DIFFICULTY = {
+    "very_easy": {"other_vehicles_count": 1},
+    "easy":      {"other_vehicles_count": 2},
+    "moderate":  {"other_vehicles_count": 4},
+}
+
+
+# ──────────────────────────────────────────────────────────────────────
 #  Merge wrapper that produces the same 80D obs as intersection training
 # ──────────────────────────────────────────────────────────────────────
 
@@ -43,7 +58,7 @@ class MergePurePPOEnv(gymnasium.Wrapper):
 
     MAX_SPEED = 15.0
 
-    def __init__(self, render_mode="rgb_array"):
+    def __init__(self, render_mode="rgb_array", other_vehicles_count=None):
         env_config = {
             "ego_on_ramp": True,
             "observation": {
@@ -75,6 +90,8 @@ class MergePurePPOEnv(gymnasium.Wrapper):
             "simulation_frequency": 30,
             "normalize_reward": False,
         }
+        if other_vehicles_count is not None:
+            env_config["other_vehicles_count"] = other_vehicles_count
 
         env = gymnasium.make("merge-v0", render_mode=render_mode,
                              config=env_config)
@@ -100,6 +117,8 @@ class MergePurePPOEnv(gymnasium.Wrapper):
         }
         self._prev_acc = 0.0
         self._last_min_dist = 1.0
+        self._step_count = 0
+        self._max_steps = 200  # 20s at 10 Hz policy_frequency
 
     def _flatten_obs(self, obs):
         if obs.ndim == 1:
@@ -127,14 +146,23 @@ class MergePurePPOEnv(gymnasium.Wrapper):
         obs, info = self.env.reset(**kwargs)
         self._prev_acc = 0.0
         self._last_min_dist = 1.0
+        self._step_count = 0
         if obs.ndim == 2:
             self._last_min_dist = self._compute_min_dist(obs)
         return self._flatten_obs(obs), info
 
     def step(self, action):
         obs, _orig_reward, terminated, truncated, info = self.env.step(action)
+        self._step_count += 1
         if obs.ndim == 2:
             self._last_min_dist = self._compute_min_dist(obs)
+        # Force truncation after max_steps (MergeEnv._is_truncated returns False)
+        if self._step_count >= self._max_steps:
+            truncated = True
+        # Also truncate if vehicle left the road (off-road)
+        vehicle = self.unwrapped.controlled_vehicles[0]
+        if not vehicle.on_road and not vehicle.crashed:
+            truncated = True
         reward = self._compute_reward(obs, action, terminated, truncated, info)
         return self._flatten_obs(obs), reward, terminated, truncated, info
 
@@ -186,12 +214,15 @@ class MergePurePPOEnv(gymnasium.Wrapper):
 # ──────────────────────────────────────────────────────────────────────
 
 def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".",
-                   record_video=True):
+                   record_video=True, difficulty="moderate"):
+    diff_cfg = MERGE_DIFFICULTY[difficulty]
     model_name = "pure_ppo_merge"
-    video_dir = os.path.join(output_dir, f"videos_{model_name}")
+    out_tag = f"{model_name}_{difficulty}_{n_episodes}ep"
+    video_dir = os.path.join(output_dir, f"videos_{out_tag}")
 
     print(f"\n{'='*60}")
     print(f"  Model:      Pure PPO (zero-shot, ego merging)")
+    print(f"  Difficulty: {difficulty} ({diff_cfg})")
     print(f"  Env:        merge-v0 (ego_on_ramp=True)")
     print(f"  Checkpoint: {checkpoint_path}")
     print(f"  Episodes:   {n_episodes}")
@@ -207,7 +238,8 @@ def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".",
     policy.model.eval()
 
     render_mode = "rgb_array" if record_video else None
-    env = MergePurePPOEnv(render_mode=render_mode)
+    env = MergePurePPOEnv(render_mode=render_mode,
+                          other_vehicles_count=diff_cfg["other_vehicles_count"])
     if record_video:
         os.makedirs(video_dir, exist_ok=True)
         env = gymnasium.wrappers.RecordVideo(
@@ -239,16 +271,14 @@ def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".",
         vehicle = env.unwrapped.controlled_vehicles[0]
         crashed = bool(vehicle.crashed)
         on_road = bool(vehicle.on_road)
-        try:
-            arrived = bool(env.unwrapped.has_arrived(vehicle))
-        except Exception:
-            arrived = False
+        # MergeEnv has no has_arrived(); use same criterion as _is_terminated
+        arrived = bool(vehicle.position[0] > 370 and not crashed)
 
         all_rewards.append(ep_reward)
         all_lengths.append(ep_len)
         all_crashed.append(crashed)
         all_arrived.append(arrived)
-        all_offroad.append(not on_road and not crashed)
+        all_offroad.append(not on_road and not crashed and not arrived)
 
         status = ("CRASH" if crashed else
                   ("ARRIVE" if arrived else
@@ -265,6 +295,8 @@ def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".",
 
     summary = {
         "model": model_name,
+        "difficulty": difficulty,
+        "difficulty_config": diff_cfg,
         "env": "merge-v0 (ego_on_ramp)",
         "checkpoint": checkpoint_path,
         "n_episodes": n_episodes,
@@ -289,7 +321,7 @@ def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".",
     }
 
     print(f"\n{'='*60}")
-    print(f"  RESULTS: Pure PPO on Merge ({n_episodes} episodes)")
+    print(f"  RESULTS: Pure PPO on Merge [{difficulty}] ({n_episodes} episodes)")
     print(f"{'='*60}")
     print(f"  Collision rate : {summary['collision_rate']*100:5.1f}%  ({n_crash}/{n_episodes})")
     print(f"  Arrival rate   : {summary['arrival_rate']*100:5.1f}%  ({n_arrive}/{n_episodes})")
@@ -303,7 +335,7 @@ def run_evaluation(checkpoint_path, n_episodes=100, output_dir=".",
     print(f"{'='*60}\n")
 
     os.makedirs(output_dir, exist_ok=True)
-    json_path = os.path.join(output_dir, f"eval_results_{model_name}.json")
+    json_path = os.path.join(output_dir, f"eval_results_{out_tag}.json")
     with open(json_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"[eval] Saved: {json_path}")
@@ -314,12 +346,14 @@ def main():
         description="Batch eval Pure PPO on merge-v0 (zero-shot)")
     parser.add_argument("--checkpoint", type=str, required=True)
     parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--difficulty", type=str, default="moderate",
+                        choices=["very_easy", "easy", "moderate"])
     parser.add_argument("--output-dir", type=str,
                         default=os.path.dirname(os.path.abspath(__file__)))
     parser.add_argument("--no-video", action="store_true")
     args = parser.parse_args()
     run_evaluation(args.checkpoint, args.episodes, args.output_dir,
-                   not args.no_video)
+                   not args.no_video, args.difficulty)
 
 
 if __name__ == "__main__":

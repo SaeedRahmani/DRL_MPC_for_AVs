@@ -13,11 +13,16 @@ For zero-shot transfer to merging we:
   4. Run the same CasADi MPC solver with a merge-ramp reference trajectory
   5. Apply the MPC output as [acc, steer] to the merge env
 
+Difficulty presets (controls number of highway traffic vehicles):
+  very_easy  : 1 vehicle
+  easy       : 2 vehicles
+  moderate   : 4 vehicles (default)
+
 Usage:
     cd /users/saeani/src/mpcrl/MPC-RL_for_AVs/src_ray_version && \\
     PYTHONPATH="$PWD:$PWD/highway-env:$PYTHONPATH" \\
     python /users/saeani/src/mpcrl/DRL_MPC_for_AVs/src_ray_version/evals/batch_eval_merge_mpcrl.py \\
-      --checkpoint <path> --model manual --episodes 100
+      --checkpoint <path> --model manual --episodes 1000 --difficulty easy --no-video
 """
 
 import os
@@ -322,7 +327,7 @@ class StandaloneMPC:
             perp = dx * ca.sin(ref_h) - dy * ca.cos(ref_h)
             para = dx * ca.cos(ref_h) + dy * ca.sin(ref_h)
 
-            speed_w = 100 if (is_collide and ca_mode == "manual") else self.weights["weight_speed"]
+            speed_w = 30 if (is_collide and ca_mode == "manual") else self.weights["weight_speed"]
 
             state_cost += (
                 4 * perp**2 + 2 * para**2 +
@@ -406,25 +411,44 @@ def update_reference_with_ca(ref, ego_index, ego_speed,
                 new_ref[stop_idx:, 2] = 0.0
 
     if rl_speed is not None:
-        ca_speeds = new_ref[:, 2]
-        new_ref[:, 2] = np.minimum(rl_speed, ca_speeds)
+        if is_collide and conflict_indices:
+            # Conflict detected → CA decel profile is the ceiling
+            ca_speeds = new_ref[:, 2]
+            new_ref[:, 2] = np.minimum(rl_speed, ca_speeds)
+        else:
+            # Safe → RL controls speed freely up to MAX_REF_SPEED
+            new_ref[:, 2] = rl_speed
 
     return new_ref
+
+
+# ──────────────────────────────────────────────────────────────────────
+#  Difficulty presets (number of highway traffic vehicles)
+# ──────────────────────────────────────────────────────────────────────
+MERGE_DIFFICULTY = {
+    "very_easy": {"other_vehicles_count": 1},
+    "easy":      {"other_vehicles_count": 2},
+    "moderate":  {"other_vehicles_count": 4},
+}
 
 
 # ──────────────────────────────────────────────────────────────────────
 #  Evaluation
 # ──────────────────────────────────────────────────────────────────────
 def run_evaluation(checkpoint_path, model_type="manual",
-                   n_episodes=100, output_dir=".", record_video=True):
+                   n_episodes=100, output_dir=".", record_video=True,
+                   difficulty="moderate"):
     from ray.rllib.policy.policy import Policy
     import torch
 
+    diff_cfg = MERGE_DIFFICULTY[difficulty]
     model_name = f"mpcrl_{model_type}_merge"
-    video_dir = os.path.join(output_dir, f"videos_{model_name}")
+    out_tag = f"{model_name}_{difficulty}_{n_episodes}ep"
+    video_dir = os.path.join(output_dir, f"videos_{out_tag}")
 
     print(f"\n{'='*60}")
     print(f"  Model:      MPCRL {model_type} (zero-shot, ego merging)")
+    print(f"  Difficulty: {difficulty} ({diff_cfg})")
     print(f"  Checkpoint: {checkpoint_path}")
     print(f"  Episodes:   {n_episodes}")
     print(f"  Output:     {output_dir}")
@@ -438,6 +462,7 @@ def run_evaluation(checkpoint_path, model_type="manual",
 
     env_config = {
         "ego_on_ramp": True,
+        "other_vehicles_count": diff_cfg["other_vehicles_count"],
         "observation": {
             "type": "Kinematics",
             "vehicles_count": 10,
@@ -554,8 +579,10 @@ def run_evaluation(checkpoint_path, model_type="manual",
                     raw_rl = 0.0
             except Exception:
                 raw_rl = 0.0  # fallback: mid-range speed
+            # Match training env: HARD_CAP = MAX_REF_SPEED * 1.10 (+10% tolerance)
+            HARD_CAP = MAX_REF_SPEED * 1.10  # 16.5 m/s
             rl_ref_speed = np.clip((raw_rl + 1.0) / 2.0 * MAX_REF_SPEED,
-                                    0.0, MAX_REF_SPEED)
+                                    0.0, HARD_CAP)
 
             # Update reference trajectory with RL speed + CA
             if use_ca:
@@ -609,6 +636,8 @@ def run_evaluation(checkpoint_path, model_type="manual",
 
     summary = {
         "model": model_name,
+        "difficulty": difficulty,
+        "difficulty_config": diff_cfg,
         "env": "merge-v0 (ego_on_ramp)",
         "checkpoint": checkpoint_path,
         "n_episodes": n_episodes,
@@ -629,7 +658,7 @@ def run_evaluation(checkpoint_path, model_type="manual",
     }
 
     print(f"\n{'='*60}")
-    print(f"  RESULTS: MPCRL {model_type} -> Merge ({n_episodes} episodes)")
+    print(f"  RESULTS: MPCRL {model_type} -> Merge [{difficulty}] ({n_episodes} episodes)")
     print(f"{'='*60}")
     print(f"  Collision rate : {summary['collision_rate']*100:5.1f}%  ({n_crash}/{n_episodes})")
     print(f"  Arrival rate   : {summary['arrival_rate']*100:5.1f}%  ({n_arrive}/{n_episodes})")
@@ -639,7 +668,7 @@ def run_evaluation(checkpoint_path, model_type="manual",
     print(f"{'='*60}\n")
 
     os.makedirs(output_dir, exist_ok=True)
-    json_path = os.path.join(output_dir, f"eval_results_{model_name}.json")
+    json_path = os.path.join(output_dir, f"eval_results_{out_tag}.json")
     with open(json_path, "w") as f:
         json.dump(summary, f, indent=2)
     print(f"[eval] Saved: {json_path}")
@@ -651,12 +680,14 @@ def main():
     parser.add_argument("--model", type=str, default="manual",
                         choices=["noCA", "manual"])
     parser.add_argument("--episodes", type=int, default=100)
+    parser.add_argument("--difficulty", type=str, default="moderate",
+                        choices=["very_easy", "easy", "moderate"])
     parser.add_argument("--output-dir", type=str,
                         default=os.path.dirname(os.path.abspath(__file__)))
     parser.add_argument("--no-video", action="store_true")
     args = parser.parse_args()
     run_evaluation(args.checkpoint, args.model, args.episodes,
-                   args.output_dir, not args.no_video)
+                   args.output_dir, not args.no_video, args.difficulty)
 
 
 if __name__ == "__main__":

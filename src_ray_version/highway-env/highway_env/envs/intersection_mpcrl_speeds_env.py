@@ -60,7 +60,7 @@ class IntersectionMpcrlSpeedsEnv_noCA(IntersectionMpcEnv_noCA):
             "features", ["presence", "x", "y", "vx", "vy", "heading", "sin_h", "cos_h"]))
         flat_size = vehicles_count * n_features + self.N_MPC_FEATURES
         self.observation_space = spaces.Box(
-            low=-1.0, high=2.0, shape=(flat_size,), dtype=np.float32,
+            low=-np.inf, high=np.inf, shape=(flat_size,), dtype=np.float32,
         )
 
     # ------------------------------------------------------------------
@@ -307,7 +307,7 @@ class IntersectionMpcrlSpeedsEnv_manual(IntersectionMpcEnv_manual):
             "features", ["presence", "x", "y", "vx", "vy", "heading", "sin_h", "cos_h"]))
         flat_size = vehicles_count * n_features + self.N_MPC_FEATURES
         self.observation_space = spaces.Box(
-            low=-1.0, high=2.0, shape=(flat_size,), dtype=np.float32,
+            low=-np.inf, high=np.inf, shape=(flat_size,), dtype=np.float32,
         )
 
     # ------------------------------------------------------------------
