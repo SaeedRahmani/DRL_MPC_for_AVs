@@ -166,3 +166,7 @@ logs/ppo_monitor.csv
 saved_models/
 model_comparison_results.png
 saved_metrics/training_plots (Copy).png
+
+
+# Evals
+src_ray_version/evals/*
